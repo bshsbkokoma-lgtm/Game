@@ -107,13 +107,14 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
         // --- Firebase Config ---
-        // This configuration has been updated with your provided details.
+        // Make sure your Realtime Database rules are set to public for this to work.
+        // { "rules": { ".read": "true", ".write": "true" } }
         const firebaseConfig = {
             apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
             authDomain: "game-8ede6.firebaseapp.com",
-            databaseURL: "https://game-8ede6-default-rtdb.firebaseio.com", // Added this based on your projectId
+            databaseURL: "https://game-8ede6-default-rtdb.firebaseio.com",
             projectId: "game-8ede6",
-            storageBucket: "game-8ede6.appspot.com", // Corrected the storage bucket URL
+            storageBucket: "game-8ede6.appspot.com",
             messagingSenderId: "206374174939",
             appId: "1:206374174939:web:48556411426f53859a4cfe",
             measurementId: "G-KG84KJ11VC"
@@ -153,9 +154,7 @@
         let userId;
         let userName;
         let currentGameId = null;
-        let playerListeners = {}; // To manage listeners and avoid duplicates
         let gameListener = null;
-        let invitationsListener = null;
 
         const questions = [
             { a: "แมว", b: "หมา" },
@@ -175,13 +174,22 @@
             if (user) {
                 userId = user.uid;
                 userIdDisplay.textContent = userId;
-
-                // Check if user already has a name
                 const userRef = ref(db, `users/${userId}`);
+                
+                // Set presence: when connected, set online true. when disconnected, set to false.
+                const presenceRef = ref(db, `users/${userId}/online`);
+                onValue(ref(db, '.info/connected'), (snap) => {
+                    if (snap.val() === true) {
+                        set(presenceRef, true);
+                        onDisconnect(userRef).update({ online: false, status: 'offline' });
+                    }
+                });
+
+                // Check if user already has a name from a previous session
                 get(userRef).then((snapshot) => {
                     if (snapshot.exists() && snapshot.val().name) {
                         userName = snapshot.val().name;
-                        setupLobby();
+                        setupLobby(userRef);
                     } else {
                         showScreen('login');
                     }
@@ -210,20 +218,19 @@
                     online: true,
                     status: 'idle'
                 });
-                onDisconnect(userRef).update({ online: false, status: 'offline' });
-                setupLobby();
+                setupLobby(userRef);
             } else {
                 loginError.classList.remove('hidden');
             }
         });
         
         // --- Lobby Logic ---
-        function setupLobby() {
+        function setupLobby(userRef) {
             userNameDisplay.textContent = userName;
             showScreen('lobby');
             listenForPlayers();
             listenForInvitations();
-            listenForGameStart();
+            listenForGameStart(userRef);
         }
 
         function listenForPlayers() {
@@ -307,7 +314,6 @@
                 status: 'playing'
             };
             
-            // Get sender's name
             get(ref(db, `users/${senderId}/name`)).then(snapshot => {
                 if(snapshot.exists()) {
                      gameData.player1.name = snapshot.val();
@@ -315,21 +321,24 @@
                 }
             });
 
-            // Update player statuses
-            set(ref(db, `users/${userId}/status`), 'in-game');
-            set(ref(db, `users/${userId}/currentGameId`), gameId);
-            set(ref(db, `users/${senderId}/status`), 'in-game');
-            set(ref(db, `users/${senderId}/currentGameId`), gameId);
+            // Update player statuses to trigger game start for both
+            const updates = {};
+            updates[`users/${userId}/status`] = 'in-game';
+            updates[`users/${userId}/currentGameId`] = gameId;
+            updates[`users/${senderId}/status`] = 'in-game';
+            updates[`users/${senderId}/currentGameId`] = gameId;
+            
+            // Clean up all invitations for both players
+            updates[`invitations/${userId}`] = null;
+            updates[`invitations/${senderId}`] = null;
 
-            // Clean up invitation
-            remove(ref(db, `invitations/${userId}/${senderId}`));
+            ref(db).update(updates);
         }
 
-        function listenForGameStart() {
-            const userStatusRef = ref(db, `users/${userId}`);
-            onValue(userStatusRef, (snapshot) => {
+        function listenForGameStart(userRef) {
+            onValue(userRef, (snapshot) => {
                 const data = snapshot.val();
-                if (data && data.status === 'in-game' && data.currentGameId && !currentGameId) {
+                if (data && data.status === 'in-game' && data.currentGameId && currentGameId !== data.currentGameId) {
                     startGame(data.currentGameId);
                 }
             });
@@ -343,8 +352,10 @@
             const gameRef = ref(db, `games/${currentGameId}`);
             gameListener = onValue(gameRef, (snapshot) => {
                 if (!snapshot.exists()) {
-                    alert('เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว');
-                    cleanUpAfterGame();
+                    if(currentGameId){ // Only show alert if we were actually in a game
+                        alert('เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว');
+                        cleanUpAfterGame();
+                    }
                     return;
                 }
                 const gameState = snapshot.val();
@@ -353,6 +364,7 @@
         }
 
         function renderGameState(state) {
+            if (!state) return;
             const isPlayer1 = state.player1.id === userId;
             const me = isPlayer1 ? state.player1 : state.player2;
             const opponent = isPlayer1 ? state.player2 : state.player1;
@@ -366,6 +378,7 @@
                 optionBButton.classList.add('hidden');
                 gameStatus.innerHTML = '<p class="font-bold text-green-600">ขอบคุณที่เล่น!</p>';
                 nextQuestionButton.classList.add('hidden');
+                resultDisplay.classList.add('hidden');
                 endGameButton.classList.remove('hidden');
                 return;
             }
@@ -379,7 +392,6 @@
             optionAButton.onclick = () => makeChoice('a');
             optionBButton.onclick = () => makeChoice('b');
 
-            // Handle choices and status display
             const bothChosen = me.choice && opponent.choice;
             
             if (bothChosen) {
@@ -394,15 +406,17 @@
                 optionAButton.onclick = null;
                 optionBButton.onclick = null;
                 nextQuestionButton.classList.remove('hidden');
-
             } else if (me.choice) {
+                gameStatus.classList.remove('hidden');
                 gameStatus.innerHTML = '<p class="text-yellow-500 font-bold">รอผู้เล่นอีกคนเลือก...</p>';
+                resultDisplay.classList.add('hidden');
                 optionAButton.classList.add('btn-disabled');
                 optionBButton.classList.add('btn-disabled');
-                 optionAButton.onclick = null;
+                optionAButton.onclick = null;
                 optionBButton.onclick = null;
-
+                nextQuestionButton.classList.add('hidden');
             } else {
+                gameStatus.classList.remove('hidden');
                 gameStatus.innerHTML = '<p class="text-gray-500">กรุณาเลือกคำตอบของคุณ</p>';
                 resultDisplay.classList.add('hidden');
                 optionAButton.classList.remove('btn-disabled');
@@ -412,42 +426,45 @@
         }
 
         function makeChoice(choice) {
-            const gameRef = ref(db, `games/${currentGameId}`);
-            get(gameRef).then(snapshot => {
+            const playerKey = ref(db, `games/${currentGameId}`).child(userId === get(ref(db, `games/${currentGameId}/player1/id`)) ? 'player1' : 'player2');
+            get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 const state = snapshot.val();
-                const playerKey = state.player1.id === userId ? 'player1' : 'player2';
-                set(ref(db, `games/${currentGameId}/${playerKey}/choice`), choice);
+                if(state){
+                    const playerKey = state.player1.id === userId ? 'player1' : 'player2';
+                    set(ref(db, `games/${currentGameId}/${playerKey}/choice`), choice);
+                }
             });
         }
         
         nextQuestionButton.addEventListener('click', () => {
-             const gameRef = ref(db, `games/${currentGameId}`);
-             get(gameRef).then(snapshot => {
+             const updates = {};
+             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 const state = snapshot.val();
+                if (!state) return;
                 const nextIndex = state.currentQuestionIndex + 1;
                 
                 if (nextIndex < state.questions.length) {
-                    set(ref(db, `games/${currentGameId}/currentQuestionIndex`), nextIndex);
-                    set(ref(db, `games/${currentGameId}/player1/choice`), null);
-                    set(ref(db, `games/${currentGameId}/player2/choice`), null);
+                    updates[`games/${currentGameId}/currentQuestionIndex`] = nextIndex;
+                    updates[`games/${currentGameId}/player1/choice`] = null;
+                    updates[`games/${currentGameId}/player2/choice`] = null;
                 } else {
-                    // End of game
-                    set(ref(db, `games/${currentGameId}/status`), 'finished');
+                    updates[`games/${currentGameId}/status`] = 'finished';
                 }
+                ref(db).update(updates);
              });
         });
 
         endGameButton.addEventListener('click', () => {
-             // Only one player needs to remove the game object
-             const gameRef = ref(db, `games/${currentGameId}`);
-             get(gameRef).then(snapshot => {
+             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 if(snapshot.exists()) {
                     const state = snapshot.val();
-                    remove(ref(db, `users/${state.player1.id}/status`));
-                    remove(ref(db, `users/${state.player1.id}/currentGameId`));
-                    remove(ref(db, `users/${state.player2.id}/status`));
-                    remove(ref(db, `users/${state.player2.id}/currentGameId`));
-                    remove(gameRef); // This will trigger the cleanup for the other player
+                    const updates = {};
+                    updates[`users/${state.player1.id}/status`] = 'idle';
+                    updates[`users/${state.player1.id}/currentGameId`] = null;
+                    updates[`users/${state.player2.id}/status`] = 'idle';
+                    updates[`users/${state.player2.id}/currentGameId`] = null;
+                    updates[`games/${currentGameId}`] = null;
+                    ref(db).update(updates);
                 }
              });
              cleanUpAfterGame();
@@ -456,25 +473,19 @@
         function cleanUpAfterGame() {
             set(ref(db, `users/${userId}/status`), 'idle');
             remove(ref(db, `users/${userId}/currentGameId`));
-
-            // Reset game state
+            
             currentGameId = null;
             if (gameListener) {
-                gameListener(); // Unsubscribe
+                gameListener(); 
                 gameListener = null;
             }
             
-            // Reset UI
             optionAButton.classList.remove('hidden');
             optionBButton.classList.remove('hidden');
             endGameButton.classList.add('hidden');
-            nextQuestionButton.classList.add('hidden');
-            resultDisplay.classList.add('hidden');
-            gameStatus.classList.remove('hidden');
 
-            setupLobby();
+            setupLobby(ref(db, `users/${userId}`));
         }
-
     </script>
 </body>
 </html>
