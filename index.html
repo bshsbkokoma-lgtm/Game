@@ -14,6 +14,7 @@
             --bg-color: #f3f4f6;
             --card-color: #ffffff;
             --choice-color: #ecf0f1;
+            --placeholder-color: #9ca3af; /* Gray for placeholder text */
         }
         body {
             font-family: 'Noto Sans Thai', 'Inter', sans-serif;
@@ -61,7 +62,15 @@
             transition: all 0.3s ease;
             cursor: pointer;
         }
-        .choice-button:hover:not(.chosen):not(.revealed) {
+        /* Custom style for placeholder text */
+        .choice-button.placeholder {
+            color: var(--placeholder-color);
+            background-color: #e5e7eb;
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+
+        .choice-button:hover:not(.chosen):not(.revealed):not(.placeholder) {
             background-color: #d1d5db;
         }
         .choice-button.chosen {
@@ -122,6 +131,17 @@
             <!-- Screen 3: Game Play & Status -->
             <div id="screen-game" class="game-card hidden space-y-6">
 
+                <!-- NEW: User ID Display (Copyable) -->
+                <div class="flex flex-col sm:flex-row justify-between items-center text-sm bg-gray-50 p-3 rounded-xl border border-gray-200">
+                    <p class="font-semibold text-gray-700 mb-2 sm:mb-0">User ID (สำหรับอ้างอิง):</p>
+                    <div class="flex items-center w-full sm:w-auto">
+                        <span id="user-id-display" class="font-mono text-xs text-gray-500 truncate mr-2 w-32 sm:w-40">...</span>
+                        <button id="copy-user-id-btn" class="text-xs px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md transition duration-150">
+                            คัดลอก
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Room Info and Players -->
                 <div class="flex justify-between items-center pb-2 border-b border-gray-200">
                     <h2 class="text-xl font-bold text-gray-800">ห้อง ID: <span id="room-id-display" class="font-mono text-base text-gray-600">...</span></h2>
@@ -151,8 +171,8 @@
                     </p>
 
                     <div id="choice-buttons-wrapper" class="grid grid-cols-2 gap-4">
-                        <button id="choice-1-btn" class="choice-button" disabled>ตัวเลือก 1</button>
-                        <button id="choice-2-btn" class="choice-button" disabled>ตัวเลือก 2</button>
+                        <button id="choice-1-btn" class="choice-button placeholder" disabled>ยังไม่เริ่ม</button>
+                        <button id="choice-2-btn" class="choice-button placeholder" disabled>ยังไม่เริ่ม</button>
                     </div>
 
                     <!-- Next Round Button (Host only) -->
@@ -160,6 +180,9 @@
                         <button id="next-round-btn" class="btn-primary hidden" disabled>
                             คำถามต่อไป (โฮสต์เท่านั้น)
                         </button>
+                        <p id="countdown-timer" class="text-sm font-medium text-red-500 mt-2 hidden">
+                            รอ 10 วินาที...
+                        </p>
                     </div>
                 </div>
 
@@ -171,9 +194,12 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // Optional: Uncomment for debugging
 
-        // === CONFIGURATION PROVIDED BY THE USER ===
+        // === CONFIGURATION PROVIDED BY THE USER (Using a placeholder config) ===
+        // NOTE: In a real environment, __firebase_config and __app_id would be available.
         const firebaseConfig = {
           apiKey: "AIzaSyAX4aPF1qDhGdVj5U6A2cIY64tar8ZGEIw",
           authDomain: "tort-63921.firebaseapp.com",
@@ -185,9 +211,10 @@
         };
         // === END CONFIGURATION ===
 
-        // Extracting required variables for the game logic
-        const appId = firebaseConfig.appId;
-        const initialAuthToken = null; // We use Anonymous sign-in for public web apps
+        // Use global variables if available, otherwise use placeholders
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.appId;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const finalFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
 
         let app;
         let db;
@@ -197,14 +224,16 @@
         let currentRoomId = null;
         let roomSnapshotUnsubscribe = null;
         let roomsListUnsubscribe = null;
+        let countdownTimer = null; // To hold the countdown interval
 
         // --- Game Data ---
         const MAX_PLAYERS = 2;
         const MAX_ROUNDS = 10;
+        const REVEAL_DURATION_SECONDS = 10;
         const ALL_QUESTIONS = [
             { t: 'แมว', h: 'หมา' }, // Cat or Dog
             { t: 'กาแฟ', h: 'ชา' }, // Coffee or Tea
-            { t: 'ทะเล', h: 'ภูเขา' }, // Sea or Mountain or Mountain
+            { t: 'ทะเล', h: 'ภูเขา' }, // Sea or Mountain
             { t: 'เช้า', h: 'กลางคืน' }, // Morning or Night
             { t: 'หนัง', h: 'ซีรีส์' }, // Movie or Series
             { t: 'เงิน', h: 'เวลา' }, // Money or Time
@@ -233,7 +262,6 @@
                         throw error;
                     }
                     const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    // console.debug(`Retrying fetch in ${delay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
@@ -288,16 +316,37 @@
             `;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
         }
+        
+        // --- Copy to Clipboard Function ---
+        function copyUserIdToClipboard(text) {
+            const tempInput = document.createElement("textarea");
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showMessage('คัดลอก User ID สำเร็จ!', 'text-green-600');
+                } else {
+                    createModal('คัดลอกไม่สำเร็จ. กรุณาลองใหม่');
+                }
+            } catch (err) {
+                createModal('ไม่สามารถคัดลอกได้: ' + err);
+            }
+            document.body.removeChild(tempInput);
+        }
+
 
         // --- Firebase Initialization and Auth ---
 
         async function initFirebase() {
+            // setLogLevel('Debug'); // Uncomment to debug firestore
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
+                if (Object.keys(finalFirebaseConfig).length === 0 || !finalFirebaseConfig.apiKey) {
                     showMessage("ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase.", 'text-red-600');
                     return;
                 }
-                app = initializeApp(firebaseConfig);
+                app = initializeApp(finalFirebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
@@ -313,6 +362,9 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
+                        // Display User ID immediately
+                        document.getElementById('user-id-display').textContent = userId;
+
                         // Check if name is already set
                         const storedName = localStorage.getItem('player-name');
                         if (storedName) {
@@ -353,6 +405,7 @@
             if (roomsListUnsubscribe) roomsListUnsubscribe();
 
             const roomsCol = collection(db, getPublicCollectionPath('rooms'));
+            // Query for rooms that are WAITING, CHOOSING, or REVEAL and not explicitly finished
             const q = query(roomsCol, where('status', 'in', ['WAITING', 'CHOOSING', 'REVEAL']));
 
             roomsListUnsubscribe = onSnapshot(q, (snapshot) => {
@@ -361,12 +414,13 @@
                 let hasRooms = false;
 
                 snapshot.docs.forEach(docSnap => {
-                    hasRooms = true;
                     const data = docSnap.data();
                     const playersCount = Object.keys(data.players || {}).length;
 
-                    if (playersCount < MAX_PLAYERS) {
-                        const roomName = data.hostName ? `${data.hostName}'s Room` : `Room ${docSnap.id.substring(0, 4)}`;
+                    // Only show rooms that are not full or are currently in game
+                    if (playersCount < MAX_PLAYERS || data.status !== 'WAITING') {
+                        hasRooms = true;
+                        const roomName = data.hostName ? `${data.hostName}'s Room (${data.status})` : `Room ${docSnap.id.substring(0, 4)} (${data.status})`;
 
                         listEl.insertAdjacentHTML('beforeend', `
                             <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-indigo-200">
@@ -403,17 +457,18 @@
             if (!userId || !userName) return createModal('กรุณาใส่ชื่อผู้เล่นก่อน!');
 
             // 1. Create initial room data
-            const newQuestion = getNextQuestion(0);
+            // NOTE: currentQuestion is set to null, the question will only be loaded when host clicks 'Start Game'
             const initialRoomData = {
                 hostId: userId,
                 hostName: userName,
                 status: 'WAITING',
                 questionIndex: 0,
-                currentQuestion: newQuestion,
+                currentQuestion: null, // Start with no question to avoid spoilers
                 players: {
                     [userId]: { name: userName, choice: null, score: 0, isHost: true }
                 },
-                createdAt: new Date().getTime()
+                createdAt: new Date().getTime(),
+                revealStartTime: null // For countdown logic
             };
 
             const roomsCol = collection(db, getPublicCollectionPath('rooms'));
@@ -506,8 +561,31 @@
         }
 
         function getNextQuestion(index) {
-            const nextIndex = index % ALL_QUESTIONS.length;
+            // Use index modulo array length to cycle questions after MAX_ROUNDS
+            const nextIndex = (index - 1) % ALL_QUESTIONS.length;
             return ALL_QUESTIONS[nextIndex];
+        }
+
+        function startCountdown(revealStartTime) {
+            if (countdownTimer) clearInterval(countdownTimer);
+            const timerEl = document.getElementById('countdown-timer');
+            const nextBtn = document.getElementById('next-round-btn');
+
+            nextBtn.disabled = true;
+            timerEl.classList.remove('hidden');
+
+            countdownTimer = setInterval(() => {
+                const elapsedSeconds = Math.floor((new Date().getTime() - revealStartTime) / 1000);
+                const remaining = REVEAL_DURATION_SECONDS - elapsedSeconds;
+
+                if (remaining <= 0) {
+                    clearInterval(countdownTimer);
+                    timerEl.classList.add('hidden');
+                    nextBtn.disabled = false;
+                } else {
+                    timerEl.textContent = `คำถามต่อไปใน ${remaining} วินาที...`;
+                }
+            }, 1000);
         }
 
         function updateGameUI(room) {
@@ -516,12 +594,19 @@
             const isHost = room.hostId === userId;
             const myPlayer = playerMap[userId] || {};
 
+            // Clear countdown interval
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                document.getElementById('countdown-timer').classList.add('hidden');
+            }
+
             // 1. Update Room Info
             document.getElementById('room-id-display').textContent = room.hostName ? room.hostName : currentRoomId.substring(0, 4);
             document.getElementById('current-round').textContent = `รอบที่: ${room.questionIndex} / ${MAX_ROUNDS}`;
 
             // 2. Update Player Scores/Names
             const pIds = Object.keys(playerMap);
+            // Ensure p1 is always the host for consistent display
             const p1Id = room.hostId;
             const p2Id = pIds.find(id => id !== p1Id);
 
@@ -536,12 +621,24 @@
             const choice1Btn = document.getElementById('choice-1-btn');
             const choice2Btn = document.getElementById('choice-2-btn');
 
-            choice1Btn.textContent = room.currentQuestion.t;
-            choice2Btn.textContent = room.currentQuestion.h;
+            // Reset button classes
             choice1Btn.className = 'choice-button';
             choice2Btn.className = 'choice-button';
             choice1Btn.disabled = true;
             choice2Btn.disabled = true;
+
+            // NEW: Set button text based on whether a question is loaded
+            if (room.status === 'WAITING' || !room.currentQuestion) {
+                choice1Btn.textContent = 'รอเริ่มเกม...';
+                choice2Btn.textContent = 'รอเริ่มเกม...';
+                choice1Btn.classList.add('placeholder');
+                choice2Btn.classList.add('placeholder');
+            } else {
+                choice1Btn.textContent = room.currentQuestion.t;
+                choice2Btn.textContent = room.currentQuestion.h;
+                choice1Btn.classList.remove('placeholder');
+                choice2Btn.classList.remove('placeholder');
+            }
 
             // 3. Handle Game Status
             const allChosen = players.length === MAX_PLAYERS && players.every(p => p.choice !== null);
@@ -557,7 +654,7 @@
                 case 'WAITING':
                     document.getElementById('game-status-message').textContent = players.length < MAX_PLAYERS
                         ? 'กำลังรอผู้เล่นคนที่สอง...'
-                        : 'ผู้เล่นครบแล้ว! พร้อมเริ่มเกม';
+                        : 'ผู้เล่นครบแล้ว! โฮสต์สามารถกดเริ่มเกมได้';
                     if (players.length === MAX_PLAYERS && isHost) {
                         document.getElementById('next-round-btn').textContent = 'เริ่มเกม!';
                         document.getElementById('next-round-btn').classList.remove('hidden');
@@ -567,6 +664,7 @@
 
                 case 'CHOOSING':
                     document.getElementById('game-status-message').textContent = 'เลือกสิ่งที่คุณชอบมากกว่า!';
+
                     if (myPlayer.choice === null) {
                         choice1Btn.disabled = false;
                         choice2Btn.disabled = false;
@@ -575,10 +673,15 @@
                         if (myPlayer.choice === 't') choice1Btn.classList.add('chosen');
                         if (myPlayer.choice === 'h') choice2Btn.classList.add('chosen');
                     }
-                    if (allChosen) {
-                        // Immediately transition to REVEAL state if all chosen
-                        if (isHost) updateDoc(roomRef, { status: 'REVEAL' });
+
+                    // *** AUTOMATIC TRANSITION LOGIC ***
+                    if (allChosen && isHost) {
+                        // Host automatically advances to REVEAL state
+                        const roomRef = getRoomDocPath(currentRoomId);
+                        const timestamp = new Date().getTime();
+                        updateDoc(roomRef, { status: 'REVEAL', revealStartTime: timestamp });
                     }
+                    // *** END AUTOMATIC TRANSITION ***
                     break;
 
                 case 'REVEAL':
@@ -600,24 +703,33 @@
                     if (isHost) {
                         document.getElementById('next-round-btn').textContent = 'คำถามต่อไป';
                         document.getElementById('next-round-btn').classList.remove('hidden');
-                        document.getElementById('next-round-btn').disabled = false;
+                        document.getElementById('next-round-btn').disabled = true; // Disabled until countdown finishes
+
+                        // Start countdown based on the Firestore timestamp
+                        if (room.revealStartTime) {
+                            startCountdown(room.revealStartTime);
+                        } else {
+                             // Fallback if timestamp missing (shouldn't happen)
+                            document.getElementById('next-round-btn').disabled = false;
+                        }
+
                     }
                     break;
 
                 case 'GAME_OVER':
+                    // Determine winner and show modal
+                    const winnerMessage = p1.score > p2.score ? `${p1.name} ชนะ!` :
+                                          p2.score > p1.score ? `${p2.name} ชนะ!` :
+                                          'เสมอกัน!';
+                    createModal(`จบเกม! ${winnerMessage} คะแนนสุดท้าย ${p1.score} - ${p2.score}`);
+
                     document.getElementById('game-status-message').textContent = 'จบเกมแล้ว!';
                     document.getElementById('game-status-message').classList.add('text-red-600');
-                    if (p1.score > p2.score) {
-                        createModal(`จบเกม! ${p1.name} ชนะด้วยคะแนน ${p1.score} - ${p2.score}`);
-                    } else if (p2.score > p1.score) {
-                        createModal(`จบเกม! ${p2.name} ชนะด้วยคะแนน ${p2.score} - ${p1.score}`);
-                    } else {
-                        createModal(`จบเกม! เสมอกันที่คะแนน ${p1.score} - ${p2.score}`);
-                    }
 
                     if (isHost) {
                         document.getElementById('next-round-btn').textContent = 'เริ่มเกมใหม่';
                         document.getElementById('next-round-btn').classList.remove('hidden');
+                        document.getElementById('next-round-btn').disabled = false;
                         document.getElementById('next-round-btn').onclick = () => resetRoom(room);
                     }
                     break;
@@ -659,11 +771,12 @@
             let newStatus = 'CHOOSING';
             let newIndex = room.questionIndex;
             let newPlayers = room.players;
+            let newQuestion = room.currentQuestion; // Default to existing question
 
-            // 1. Calculate Score (only if coming from REVEAL or WAITING to first round)
+            // 1. Handle transition from REVEAL or WAITING
             if (room.status === 'REVEAL') {
+                // Calculate Score
                 const pIds = Object.keys(newPlayers);
-                // Ensure we have two players to calculate scores
                 if (pIds.length === MAX_PLAYERS) {
                     const p1Choice = newPlayers[pIds[0]].choice;
                     const p2Choice = newPlayers[pIds[1]].choice;
@@ -680,25 +793,37 @@
                 if (newIndex > MAX_ROUNDS) {
                     newStatus = 'GAME_OVER';
                 }
+                
+                // Get the next question (or null if game over)
+                newQuestion = newStatus === 'GAME_OVER' ? null : getNextQuestion(newIndex); 
+
             } else if (room.status === 'WAITING') {
+                 // Transition from WAITING to CHOOSING (Start Game)
+                 if (Object.keys(room.players).length < MAX_PLAYERS) {
+                     createModal('ยังไม่มีผู้เล่นครบ 2 คน!');
+                     return;
+                 }
                  newIndex = 1; // Start the first round
+                 newQuestion = getNextQuestion(newIndex); // Get the first question
+                 newStatus = 'CHOOSING';
+            } else if (room.status === 'CHOOSING') {
+                // If somehow host manually clicks next in CHOOSING, ignore or force transition
+                return;
             }
 
-
-            // 2. Reset Choices & Get New Question
+            // 2. Reset Choices (applies to both transitions)
             for (const id in newPlayers) {
                 newPlayers[id].choice = null;
             }
-
-            const newQuestion = getNextQuestion(newIndex);
 
             // 3. Update Firestore
             try {
                 await updateDoc(roomRef, {
                     status: newStatus,
                     questionIndex: newIndex,
-                    currentQuestion: newQuestion,
-                    players: newPlayers // Update scores and reset choices
+                    currentQuestion: newQuestion, // Include the new question here (or null if game over)
+                    players: newPlayers,
+                    revealStartTime: null // Clear reveal time
                 });
             } catch (error) {
                 console.error("Error advancing round:", error);
@@ -722,7 +847,8 @@
                      status: 'CHOOSING',
                      questionIndex: 1,
                      currentQuestion: newQuestion,
-                     players: newPlayers
+                     players: newPlayers,
+                     revealStartTime: null
                  });
              } catch (error) {
                  console.error("Error resetting room:", error);
@@ -730,18 +856,42 @@
              }
         }
 
-        function leaveRoom(navigate = true) {
+        async function leaveRoom(navigate = true) {
             if (roomSnapshotUnsubscribe) {
                 roomSnapshotUnsubscribe();
                 roomSnapshotUnsubscribe = null;
             }
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
 
             if (currentRoomId && userId) {
                 const roomRef = getRoomDocPath(currentRoomId);
-                // Remove player from the room document
-                updateDoc(roomRef, {
-                    [`players.${userId}`]: deleteField()
-                }).catch(e => console.warn("Could not delete player field (room might be gone):", e));
+
+                try {
+                    const docSnap = await getDoc(roomRef);
+                    if (!docSnap.exists()) {
+                        console.warn("Room already gone.");
+                    } else {
+                        const roomData = docSnap.data();
+                        const playersCount = Object.keys(roomData.players || {}).length;
+
+                        // *** LOGIC FOR AUTOMATIC ROOM DELETION (FROM PREVIOUS REQUEST) ***
+                        if (playersCount === 1 && roomData.players.hasOwnProperty(userId)) {
+                            // If only one player left (the current user), delete the room entirely.
+                            await deleteDoc(roomRef);
+                            showMessage(`ห้อง ${currentRoomId.substring(0, 4)} ถูกลบแล้ว`, 'text-red-600');
+                        } else if (playersCount > 1 && roomData.players.hasOwnProperty(userId)) {
+                            // If other players remain, just remove the current player.
+                            await updateDoc(roomRef, {
+                                [`players.${userId}`]: deleteField()
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error leaving/deleting room:", e);
+                }
             }
 
             currentRoomId = null;
@@ -768,37 +918,60 @@
             startApp();
         };
 
+        // Event listener for copying User ID
+        document.getElementById('copy-user-id-btn').onclick = () => {
+            const idToCopy = document.getElementById('user-id-display').textContent;
+            if (idToCopy && idToCopy !== '...') {
+                copyUserIdToClipboard(idToCopy);
+            }
+        };
+
         document.getElementById('create-room-btn').onclick = createRoom;
 
         document.getElementById('leave-room-btn').onclick = () => {
-             createModal('แน่ใจหรือไม่ว่าต้องการออกจากห้อง?'); // Using the simplified modal
-             document.getElementById('app-modal').querySelector('button').textContent = 'ยกเลิก';
-             const confirmBtn = document.createElement('button');
-             confirmBtn.className = 'btn-primary px-6 ml-3 bg-red-600 hover:bg-red-700';
-             confirmBtn.textContent = 'ยืนยัน';
-             confirmBtn.onclick = () => {
+             // Use a custom modal for confirmation (since alert/confirm is forbidden)
+             const message = 'แน่ใจหรือไม่ว่าต้องการออกจากห้อง? หากคุณเป็นคนสุดท้าย ห้องจะถูกลบทิ้ง';
+             const existingModal = document.getElementById('app-modal');
+             if (existingModal) existingModal.remove();
+
+             const modalHtml = `
+                 <div id="app-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                     <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                         <p class="text-lg font-semibold text-gray-800 mb-4">${message}</p>
+                         <button id="cancel-leave-btn" class="btn-primary px-6 bg-gray-500 hover:bg-gray-600">
+                             ยกเลิก
+                         </button>
+                         <button id="confirm-leave-btn" class="btn-primary px-6 ml-3 bg-red-600 hover:bg-red-700">
+                             ยืนยันการออก
+                         </button>
+                     </div>
+                 </div>
+             `;
+             document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+             document.getElementById('cancel-leave-btn').onclick = () => document.getElementById('app-modal').remove();
+             document.getElementById('confirm-leave-btn').onclick = () => {
                  document.getElementById('app-modal').remove();
                  leaveRoom();
              };
-             document.getElementById('app-modal').querySelector('.text-center').appendChild(confirmBtn);
         };
 
 
-        document.getElementById('choice-1-btn').onclick = () => makeChoice('t');
-        document.getElementById('choice-2-btn').onclick = () => makeChoice('h');
+        document.getElementById('choice-1-btn').onclick = () => {
+            if (document.getElementById('choice-1-btn').classList.contains('placeholder')) return;
+            makeChoice('t');
+        };
+        document.getElementById('choice-2-btn').onclick = () => {
+            if (document.getElementById('choice-2-btn').classList.contains('placeholder')) return;
+            makeChoice('h');
+        };
+        
+        // Host function for starting/advancing round
         document.getElementById('next-round-btn').onclick = nextRound;
 
 
         // Start the application flow
         initFirebase();
-
-        // Must define deleteField function from Firestore SDK to use it
-        const deleteField = {
-            firestore: {
-                delete: true
-            }
-        };
-
     </script>
 </body>
 </html>
