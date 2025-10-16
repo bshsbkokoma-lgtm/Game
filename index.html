@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกม This or That (เลือกหรือเลือก)</title>
+    <title>เกม This or That</title>
     <!-- โหลด Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -244,13 +244,13 @@
             { t: 'เช้า', h: 'กลางคืน' }, // Morning or Night
             { t: 'หนัง', h: 'ซีรีส์' }, // Movie or Series
             { t: 'เงิน', h: 'เวลา' }, // Money or Time
-            { t: 'กินอาหารคนเดียว', h: 'ดูหนังคนเดียว' }, // Eat alone or Watch movie alone
+            { t: 'กินข้าวคนเดียว', h: 'ดูหนังคนเดียว' }, // Eat alone or Watch movie alone
             { t: 'ฝนตก', h: 'หิมะตก' }, // Rain or Snow
-            { t: 'ข้อความ', h: 'โทรศัพท์' }, // Text or Call
+            { t: 'แชท', h: 'โทร' }, // Text or Call
             { t: 'เครื่องบิน', h: 'รถไฟ' }, // Plane or Train
             { t: 'หวาน', h: 'เผ็ด' }, // Sweet or Spicy
             { t: 'ตลก', h: 'โรแมนติก' }, // Comedy or Romance
-            { t: 'เดินทาง', h: 'อยู่บ้าน' }, // Travel or Stay home
+            { t: 'เที่ยว', h: 'อยู่บ้าน' }, // Travel or Stay home
             { t: 'อ่านหนังสือ', h: 'ฟังเพลง' } // Read book or Listen to music
         ];
 
@@ -315,7 +315,7 @@
                 const p1Chose = entry.p1Choice === 't' ? entry.question.t : entry.question.h;
                 const p2Chose = entry.p2Choice === 't' ? entry.question.t : entry.question.h;
                 const matchText = entry.match ?
-                    `<span class="text-green-600 font-bold">เหมือนกัน! (+1 คะแนน)</span>` :
+                    `<span class="text-green-600 font-bold">เหมือนกันเยย!</span>` :
                     `<span class="text-red-600 font-bold">แตกต่างกัน</span>`;
 
                 return `
