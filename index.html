@@ -3,611 +3,788 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกมเลือกฝั่ง (This or That)</title>
+    <title>เกม This or That (เลือกหรือเลือก)</title>
+    <!-- โหลด Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Kanit', sans-serif;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&display=swap');
+        :root {
+            --primary-color: #4f46e5;
+            --secondary-color: #8b5cf6;
+            --bg-color: #f3f4f6;
+            --card-color: #ffffff;
+            --choice-color: #ecf0f1;
         }
-        .btn {
-            @apply w-full px-4 py-3 text-lg font-bold text-white rounded-lg shadow-md transition-transform duration-200 ease-in-out;
+        body {
+            font-family: 'Noto Sans Thai', 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            min-height: 100vh;
+        }
+        .container-wrapper {
+            max-width: 90%;
+            margin: auto;
+            padding: 1rem 0;
+        }
+        .game-card {
+            background-color: var(--card-color);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
         }
         .btn-primary {
-            @apply bg-blue-500 hover:bg-blue-600 active:scale-95;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+            cursor: pointer;
         }
-        .btn-secondary {
-            @apply bg-green-500 hover:bg-green-600 active:scale-95;
+        .btn-primary:hover:not(:disabled) {
+            background-color: #4338ca;
         }
-        .btn-disabled {
-            @apply bg-gray-400 cursor-not-allowed;
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
-        .card {
-            @apply bg-white p-6 md:p-8 rounded-xl shadow-2xl;
+        .choice-button {
+            width: 100%;
+            min-height: 100px;
+            background-color: var(--choice-color);
+            color: #1f2937;
+            border: 3px solid transparent;
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding: 1rem;
+            border-radius: 1rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
         }
-        .hidden {
-            display: none;
+        .choice-button:hover:not(.chosen):not(.revealed) {
+            background-color: #d1d5db;
+        }
+        .choice-button.chosen {
+            background-color: var(--secondary-color);
+            color: white;
+            transform: scale(1.02);
+        }
+        .choice-button.winner {
+            border-color: #10b981; /* Green border for match */
+            background-color: #d1fae5;
+        }
+        .choice-button.loser {
+            border-color: #f87171; /* Red border for no match */
+            background-color: #fee2e2;
         }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body>
 
-    <div id="app-container" class="w-full max-w-md mx-auto p-4">
+    <div class="container-wrapper flex flex-col items-center">
+        <header class="text-center my-6">
+            <h1 class="text-4xl font-extrabold text-gray-900 leading-tight">เลือก หรือ เลือก (This or That)</h1>
+            <p id="player-status" class="text-sm mt-1 text-gray-500">รอการเชื่อมต่อ...</p>
+        </header>
 
-        <!-- Login Screen -->
-        <div id="login-screen" class="card text-center">
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">เกมเลือกฝั่ง</h1>
-            <p class="text-gray-500 mb-6">ใส่ชื่อของคุณเพื่อเริ่มเล่นกับเพื่อนๆ</p>
-            <input type="text" id="name-input" class="w-full px-4 py-2 border rounded-lg mb-4" placeholder="ชื่อของคุณ...">
-            <button id="login-button" class="btn btn-primary">เข้าสู่ระบบ</button>
-            <p id="login-error" class="text-red-500 mt-2 hidden">กรุณาใส่ชื่อของคุณ</p>
-        </div>
+        <!-- Main Content Area -->
+        <div id="game-container" class="w-full lg:w-3/4 xl:w-1/2">
 
-        <!-- Lobby Screen (New Lobby System) -->
-        <div id="lobby-screen" class="hidden">
-            <div class="card mb-4">
-                <h2 class="text-2xl font-bold text-gray-800 mb-1">สวัสดี, <span id="user-name-display" class="text-blue-500"></span>!</h2>
-                <p class="text-gray-500 mb-4">เลือกห้องเพื่อเข้าร่วม หรือสร้างห้องใหม่</p>
-
-                <!-- Create Room Button -->
-                <button id="create-room-button" class="btn bg-red-500 hover:bg-red-600 active:scale-95 mb-4">
-                    สร้างห้องใหม่ (1 VS 1)
+            <!-- Screen 1: Name Entry -->
+            <div id="screen-name" class="game-card flex flex-col space-y-4">
+                <h2 class="text-xl font-bold text-gray-800">1. ใส่ชื่อของคุณ</h2>
+                <input type="text" id="player-name-input" placeholder="ชื่อเล่นของคุณ" maxlength="15"
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-lg">
+                <button id="set-name-btn" class="btn-primary">
+                    บันทึกชื่อ & ดูห้องเกม
                 </button>
             </div>
-            
-            <!-- Available Rooms List -->
-            <div class="card">
-                <h3 class="text-xl font-bold mb-3 flex justify-between items-center">
-                    ห้องที่เปิดรออยู่ <span id="room-count" class="text-gray-400 text-sm">(0 ห้อง)</span>
-                </h3>
-                <ul id="rooms-list" class="space-y-3">
-                    <li class="text-center text-gray-400">กำลังโหลดห้อง...</li>
-                </ul>
+
+            <!-- Screen 2: Room Selection/Creation -->
+            <div id="screen-rooms" class="game-card hidden space-y-6">
+                <h2 class="text-xl font-bold text-gray-800">2. สร้างหรือเข้าร่วมห้อง</h2>
+
+                <!-- Room Creation -->
+                <button id="create-room-btn" class="btn-primary w-full">
+                    สร้างห้องใหม่ (2 ผู้เล่น)
+                </button>
+
+                <!-- Available Rooms List -->
+                <div class="space-y-3">
+                    <h3 class="text-lg font-semibold text-gray-700">ห้องที่มีอยู่ (เห็นทั่วโลก)</h3>
+                    <div id="rooms-list" class="bg-gray-50 p-4 rounded-xl border border-gray-200 min-h-[100px] max-h-96 overflow-y-auto space-y-2">
+                        <!-- Rooms will be injected here -->
+                        <p class="text-gray-500 italic" id="loading-rooms">กำลังโหลดห้อง...</p>
+                    </div>
+                </div>
             </div>
 
-            <div class="mt-4 text-center text-xs text-gray-400">
-                <p>User ID ของคุณ: <span id="user-id-display"></span></p>
+            <!-- Screen 3: Game Play & Status -->
+            <div id="screen-game" class="game-card hidden space-y-6">
+
+                <!-- Room Info and Players -->
+                <div class="flex justify-between items-center pb-2 border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800">ห้อง ID: <span id="room-id-display" class="font-mono text-base text-gray-600">...</span></h2>
+                    <button id="leave-room-btn" class="text-sm text-red-600 hover:text-red-800 font-medium">
+                        ออกจากห้อง
+                    </button>
+                </div>
+
+                <!-- Player Status -->
+                <div id="player-scores" class="flex justify-around text-center">
+                    <div id="player-1-info">
+                        <p class="text-base font-medium text-gray-900" id="p1-name">รอผู้เล่น 1...</p>
+                        <p class="text-3xl font-bold text-primary-color" id="p1-score">0</p>
+                    </div>
+                    <div class="text-4xl font-bold text-gray-400">VS</div>
+                    <div id="player-2-info">
+                        <p class="text-base font-medium text-gray-900" id="p2-name">รอผู้เล่น 2...</p>
+                        <p class="text-3xl font-bold text-primary-color" id="p2-score">0</p>
+                    </div>
+                </div>
+
+                <!-- Game Area -->
+                <div id="game-area" class="space-y-4 pt-4 border-t border-gray-200">
+                    <h3 id="current-round" class="text-center text-lg font-semibold text-gray-600">รอบที่: 0 / 10</h3>
+                    <p id="game-status-message" class="text-center text-2xl font-bold text-gray-700 min-h-[50px]">
+                        รอผู้เล่นคนที่สอง...
+                    </p>
+
+                    <div id="choice-buttons-wrapper" class="grid grid-cols-2 gap-4">
+                        <button id="choice-1-btn" class="choice-button" disabled>ตัวเลือก 1</button>
+                        <button id="choice-2-btn" class="choice-button" disabled>ตัวเลือก 2</button>
+                    </div>
+
+                    <!-- Next Round Button (Host only) -->
+                    <div class="text-center pt-4">
+                        <button id="next-round-btn" class="btn-primary hidden" disabled>
+                            คำถามต่อไป (โฮสต์เท่านั้น)
+                        </button>
+                    </div>
+                </div>
+
             </div>
         </div>
-
-        <!-- Game Screen (No change in core game elements) -->
-        <div id="game-screen" class="hidden">
-            <div class="card text-center">
-                <div class="flex justify-between items-center mb-4 text-sm font-semibold">
-                    <span id="player1-name" class="text-blue-600 bg-blue-100 px-3 py-1 rounded-full"></span>
-                    <span class="text-gray-500">VS</span>
-                    <span id="player2-name" class="text-green-600 bg-green-100 px-3 py-1 rounded-full"></span>
-                </div>
-
-                <h2 id="question-counter" class="text-xl font-bold text-gray-700 mb-2">คำถามที่ 1</h2>
-                <p id="question-text" class="text-2xl md:text-3xl font-bold text-gray-800 mb-6 h-24 flex items-center justify-center">คำถาม...</p>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <button id="option-a-button" class="btn bg-pink-500 hover:bg-pink-600 active:scale-95"></button>
-                    <button id="option-b-button" class="btn bg-indigo-500 hover:bg-indigo-600 active:scale-95"></button>
-                </div>
-                
-                <div id="game-status" class="mt-4 h-12 flex items-center justify-center">
-                     <p class="text-gray-500">กรุณาเลือกคำตอบของคุณ</p>
-                </div>
-
-                <div id="result-display" class="hidden mt-4 text-lg space-y-2">
-                    <p id="player1-choice"></p>
-                    <p id="player2-choice"></p>
-                </div>
-
-                <button id="next-question-button" class="btn btn-secondary mt-4 hidden">คำถามต่อไป</button>
-                 <button id="end-game-button" class="btn bg-red-500 hover:bg-red-600 active:scale-95 mt-4 hidden">จบเกมและกลับไปที่ล็อบบี้</button>
-            </div>
-        </div>
-
     </div>
 
+    <!-- Firebase Scripts (Must be type="module") -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, onDisconnect, remove, push, get, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        
-        // --- Firebase Config ---
-        // **ย้ำอีกครั้ง: ต้องตั้งค่า Realtime Database Rules ให้เป็น ".read": "true", ".write": "true" เพื่อให้ระบบนี้ทำงานได้**
-        const firebaseConfig = {
-            apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
-            authDomain: "game-8ede6.firebaseapp.com",
-            databaseURL: "https://game-8ede6-default-rtdb.firebaseio.com",
-            projectId: "game-8ede6",
-            storageBucket: "game-8ede6.appspot.com",
-            messagingSenderId: "206374174939",
-            appId: "1:206374174939:web:48556411426f53859a4cfe",
-            measurementId: "G-KG84KJ11VC"
-        };
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, arrayRemove, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-        const auth = getAuth(app);
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- DOM Elements ---
-        const loginScreen = document.getElementById('login-screen');
-        const lobbyScreen = document.getElementById('lobby-screen');
-        const gameScreen = document.getElementById('game-screen');
-        const nameInput = document.getElementById('name-input');
-        const loginButton = document.getElementById('login-button');
-        const loginError = document.getElementById('login-error');
-        const userNameDisplay = document.getElementById('user-name-display');
-        const userIdDisplay = document.getElementById('user-id-display');
-        
-        // New/Updated Lobby Elements
-        const createRoomButton = document.getElementById('create-room-button');
-        const roomsList = document.getElementById('rooms-list');
-        const roomCount = document.getElementById('room-count');
-        
-        // Game screen elements (unchanged)
-        const player1Name = document.getElementById('player1-name');
-        const player2Name = document.getElementById('player2-name');
-        const questionCounter = document.getElementById('question-counter');
-        const questionText = document.getElementById('question-text');
-        const optionAButton = document.getElementById('option-a-button');
-        const optionBButton = document.getElementById('option-b-button');
-        const gameStatus = document.getElementById('game-status');
-        const resultDisplay = document.getElementById('result-display');
-        const player1Choice = document.getElementById('player1-choice');
-        const player2Choice = document.getElementById('player2-choice');
-        const nextQuestionButton = document.getElementById('next-question-button');
-        const endGameButton = document.getElementById('end-game-button');
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let userName = null;
+        let currentRoomId = null;
+        let roomSnapshotUnsubscribe = null;
+        let roomsListUnsubscribe = null;
 
-        // --- Game State ---
-        let userId;
-        let userName;
-        let currentGameId = null;
-        let gameListener = null;
-
-        const questions = [
-            { a: "แมว", b: "หมา" },
-            { a: "ทะเล", b: "ภูเขา" },
-            { a: "กาแฟ", b: "ชา" },
-            { a: "ดูหนังที่บ้าน", b: "ดูหนังในโรง" },
-            { a: "กลางคืน", b: "กลางวัน" },
-            { a: "พิซซ่า", b: "เบอร์เกอร์" },
-            { a: "ร้องเพลง", b: "เต้น" },
-            { a: "อ่านหนังสือ", b: "ฟังเพลง" },
-            { a: "อยู่คนเดียว", b: "อยู่กับเพื่อน" },
-            { a: "เงิน", b: "ความรัก" },
+        // --- Game Data ---
+        const MAX_PLAYERS = 2;
+        const MAX_ROUNDS = 10;
+        const ALL_QUESTIONS = [
+            { t: 'แมว', h: 'หมา' }, // Cat or Dog
+            { t: 'กาแฟ', h: 'ชา' }, // Coffee or Tea
+            { t: 'ทะเล', h: 'ภูเขา' }, // Sea or Mountain or Mountain
+            { t: 'เช้า', h: 'กลางคืน' }, // Morning or Night
+            { t: 'หนัง', h: 'ซีรีส์' }, // Movie or Series
+            { t: 'เงิน', h: 'เวลา' }, // Money or Time
+            { t: 'กินอาหารคนเดียว', h: 'ดูหนังคนเดียว' }, // Eat alone or Watch movie alone
+            { t: 'ฝนตก', h: 'หิมะตก' }, // Rain or Snow
+            { t: 'ข้อความ', h: 'โทรศัพท์' }, // Text or Call
+            { t: 'เครื่องบิน', h: 'รถไฟ' }, // Plane or Train
+            { t: 'หวาน', h: 'เผ็ด' }, // Sweet or Spicy
+            { t: 'ตลก', h: 'โรแมนติก' }, // Comedy or Romance
+            { t: 'เดินทาง', h: 'อยู่บ้าน' }, // Travel or Stay home
+            { t: 'อ่านหนังสือ', h: 'ฟังเพลง' } // Read book or Listen to music
         ];
 
-        // --- Authentication ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                userId = user.uid;
-                userIdDisplay.textContent = userId;
-                const userRef = ref(db, `users/${userId}`);
-                
-                get(userRef).then((snapshot) => {
-                    if (snapshot.exists() && snapshot.val().name) {
-                        completeLoginAndSetup(snapshot.val().name, userRef);
-                    } else {
-                        showScreen('login');
+        // Helper function for exponential backoff retry (for API calls)
+        async function retryFetch(url, options, maxRetries = 5) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                }).catch(error => {
-                    console.error("Error checking existing user data (Check Rules!):", error);
-                    showScreen('login');
-                });
-            } else {
-                signInAnonymously(auth).catch((error) => console.error("Anonymous sign in failed", error));
+                    return response;
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        console.error('Fetch failed after multiple retries:', error);
+                        throw error;
+                    }
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    // console.debug(`Retrying fetch in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
-        });
-        
+        }
+
+        // --- Utility Functions ---
+
         /**
-         * Ensures user data is written before starting lobby listeners and sets up presence.
+         * Generates a unique collection path for public artifacts.
+         * @param {string} collectionName
          */
-        function completeLoginAndSetup(name, userRef) {
-            userName = name;
-            userNameDisplay.textContent = userName;
-
-            // 1. Write initial/current user data to DB
-            set(userRef, {
-                name: userName,
-                online: true,
-                status: 'idle'
-            }).catch(error => console.error("Error setting initial user data (Check Write Rules!):", error));
-
-            // 2. Set Presence (On Disconnect) - Clean up room if user leaves while waiting
-            onValue(ref(db, '.info/connected'), (snap) => {
-                if (snap.val() === true) {
-                    set(ref(db, `users/${userId}/online`), true); 
-                    
-                    const onDisconnectRef = onDisconnect(userRef);
-                    onDisconnectRef.update({ online: false, status: 'offline' })
-                        .catch(error => console.error("Error setting onDisconnect user status:", error));
-                    
-                    // Clean up any room the user created if they leave while waiting
-                    get(ref(db, `users/${userId}/currentRoomId`)).then(snapshot => {
-                        if (snapshot.exists()) {
-                            const currentRoomId = snapshot.val();
-                            if (currentRoomId) {
-                                onDisconnect(ref(db, `publicRooms/${currentRoomId}`)).remove()
-                                    .catch(error => console.error("Error setting onDisconnect room removal:", error));
-                            }
-                        }
-                    });
-
-                }
-            }, (error) => console.error("Error checking connection status:", error));
-
-
-            // 3. Start Lobby listeners
-            setupLobby(userRef);
+        function getPublicCollectionPath(collectionName) {
+            return `artifacts/${appId}/public/data/${collectionName}`;
         }
 
-
-        // --- UI Control ---
-        function showScreen(screenName) {
-            loginScreen.classList.add('hidden');
-            lobbyScreen.classList.add('hidden');
-            gameScreen.classList.add('hidden');
-            document.getElementById(`${screenName}-screen`).classList.remove('hidden');
+        /**
+         * Generates a unique document path for a specific room.
+         * @param {string} roomId
+         */
+        function getRoomDocPath(roomId) {
+            return doc(db, getPublicCollectionPath('rooms'), roomId);
         }
 
-        // --- Login Logic ---
-        loginButton.addEventListener('click', () => {
-            const name = nameInput.value.trim();
-            if (name) {
-                const userRef = ref(db, `users/${userId}`);
-                completeLoginAndSetup(name, userRef);
-                loginError.classList.add('hidden');
-            } else {
-                loginError.classList.remove('hidden');
-            }
-        });
-        
-        // --- Lobby System Logic (New) ---
-        function setupLobby(userRef) {
-            showScreen('lobby');
-            listenForRooms();
-            listenForGameStart(userRef);
-
-            createRoomButton.onclick = createRoom;
-        }
-
-        function createRoom() {
-            createRoomButton.classList.add('btn-disabled');
-            createRoomButton.textContent = 'กำลังสร้างห้อง...';
-            createRoomButton.onclick = null;
-
-            const roomRef = push(ref(db, 'publicRooms'));
-            const roomId = roomRef.key;
-
-            const roomData = {
-                creatorId: userId,
-                creatorName: userName,
-                status: 'waiting', // Waiting for player 2
-                createdAt: Date.now()
-            };
-
-            // 1. Write room data
-            set(roomRef, roomData)
-            .then(() => {
-                // 2. Update user status and link to the room
-                return update(ref(db, `users/${userId}`), {
-                    status: 'waiting', // New status for waiting in lobby
-                    currentRoomId: roomId
-                });
-            })
-            .then(() => {
-                console.log(`Room created: ${roomId}. Waiting for player 2.`);
-                // UI feedback is handled by listenForRooms and listenForGameStart
-            })
-            .catch(error => {
-                console.error("Error creating room:", error);
-                // Reset button on failure
-                resetCreateRoomButton();
-                // Show error message
-                roomsList.insertAdjacentHTML('afterbegin', 
-                    `<li class="text-center text-red-500 font-bold bg-red-50 p-3 rounded-lg border border-red-300">
-                        สร้างห้องล้มเหลว! โปรดตรวจสอบการเชื่อมต่อและกฎ Write Rules
-                    </li>`);
+        function showScreen(screenId) {
+            const screens = ['screen-name', 'screen-rooms', 'screen-game'];
+            screens.forEach(id => {
+                document.getElementById(id).classList.add('hidden');
             });
-        }
-        
-        function resetCreateRoomButton() {
-            createRoomButton.classList.remove('btn-disabled');
-            createRoomButton.textContent = 'สร้างห้องใหม่ (1 VS 1)';
-            createRoomButton.onclick = createRoom;
+            document.getElementById(screenId).classList.remove('hidden');
         }
 
-
-        function listenForRooms() {
-            const roomsRef = ref(db, 'publicRooms');
-            
-            // แสดงสถานะ "กำลังโหลด" ขณะรอข้อมูล
-            roomsList.innerHTML = '<li class="text-center text-gray-400">กำลังโหลดห้อง...</li>'; 
-
-            onValue(roomsRef, (snapshot) => {
-                roomsList.innerHTML = '';
-                const rooms = snapshot.val();
-                const roomKeys = rooms ? Object.keys(rooms) : [];
-                
-                roomCount.textContent = `(${roomKeys.length} ห้อง)`;
-
-                if (roomKeys.length > 0) {
-                    roomKeys.forEach(roomId => {
-                        const room = rooms[roomId];
-                        
-                        // ไม่แสดงห้องที่ตัวเองสร้างและกำลังรออยู่ (เพื่อไม่ให้ Join ตัวเอง)
-                        if (room.creatorId === userId && room.status === 'waiting') {
-                             roomsList.insertAdjacentHTML('afterbegin', `
-                                <li id="my-waiting-room" class="flex justify-between items-center bg-yellow-100 p-3 rounded-lg border-l-4 border-yellow-500">
-                                    <span class="font-bold text-yellow-800">ห้องของคุณ: ${room.creatorName}</span>
-                                    <span class="text-sm text-yellow-600">รอผู้เล่น...</span>
-                                </li>
-                            `);
-                             // Disable create room button if already waiting in a room
-                             createRoomButton.classList.add('btn-disabled');
-                             createRoomButton.textContent = 'คุณกำลังรอในห้อง...';
-                             createRoomButton.onclick = null;
-                            return;
-                        }
-
-                        // แสดงห้องที่คนอื่นสร้างและพร้อมเข้าร่วม
-                        if (room.status === 'waiting' && room.creatorId !== userId) {
-                            const li = document.createElement('li');
-                            li.className = 'flex justify-between items-center bg-gray-50 p-3 rounded-lg border-l-4 border-blue-500';
-                            
-                            const nameSpan = document.createElement('span');
-                            nameSpan.innerHTML = `<span class="font-semibold">${room.creatorName}</span> <span class="text-gray-500 text-sm">กำลังรอ</span>`;
-                            li.appendChild(nameSpan);
-
-                            const joinButton = document.createElement('button');
-                            joinButton.textContent = 'เข้าร่วม';
-                            joinButton.className = 'bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600';
-                            joinButton.onclick = () => joinRoom(roomId, room.creatorId, room.creatorName);
-                            li.appendChild(joinButton);
-                            roomsList.appendChild(li);
-                        }
-                    });
-                }
-                
-                // If no rooms are available or I'm waiting in my room
-                if (roomKeys.length === 0) {
-                    roomsList.innerHTML = '<li class="text-center text-gray-400">ยังไม่มีห้องที่เปิดรออยู่</li>';
-                }
-
-                // If my room is not found (meaning the game started or my room was deleted)
-                const myRoomElement = document.getElementById('my-waiting-room');
-                if (!myRoomElement && roomKeys.some(id => rooms[id].creatorId === userId && rooms[id].status === 'waiting')) {
-                    // Do nothing, still waiting, listener handles my room
-                } else if (!roomKeys.some(id => rooms[id].creatorId === userId)) {
-                    // Reset button if I'm not waiting in any room
-                    resetCreateRoomButton();
-                }
-
-            }, (error) => {
-                 // แสดงข้อความใน UI และ Console หากการเชื่อมต่อมีปัญหา
-                 console.error("Firebase Read Error (Check Rules!):", error);
-                 roomsList.innerHTML = '<li class="text-center text-red-600 font-bold bg-red-50 p-3 rounded-lg border border-red-300">ไม่สามารถโหลดรายชื่อห้องได้! <br/>โปรดตรวจสอบกฎความปลอดภัยของ Realtime Database ให้เป็น ".read": "true"</li>';
-            });
-        }
-        
-        function joinRoom(roomId, creatorId, creatorName) {
-             const gameId = push(ref(db, 'games')).key;
-             const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
-             
-             const gameData = {
-                 player1: { id: creatorId, name: creatorName, choice: null }, // Creator is Player 1
-                 player2: { id: userId, name: userName, choice: null },       // Joiner is Player 2
-                 currentQuestionIndex: 0,
-                 questions: shuffledQuestions,
-                 status: 'playing'
-             };
-
-             // 1. สร้างเกมใหม่
-             // 2. อัปเดตสถานะผู้เล่นทั้งสอง
-             // 3. ลบห้องสาธารณะทิ้ง
-             const updates = {};
-             updates[`games/${gameId}`] = gameData;
-             updates[`users/${creatorId}/status`] = 'in-game';
-             updates[`users/${creatorId}/currentGameId`] = gameId;
-             updates[`users/${creatorId}/currentRoomId`] = null; // Clear room ID
-             updates[`users/${userId}/status`] = 'in-game';
-             updates[`users/${userId}/currentGameId`] = gameId;
-             updates[`publicRooms/${roomId}`] = null; // Delete the room
-
-             update(ref(db), updates)
-                 .then(() => {
-                    console.log(`Game started: ${gameId}`);
-                    // Player 1 (Creator) will automatically receive the update via listenForGameStart
-                    // Player 2 (Joiner) will also go to game screen via listenForGameStart
-                 })
-                 .catch(error => {
-                     console.error("Error joining room and starting game:", error);
-                     alert('ไม่สามารถเข้าร่วมเกมได้! โปรดลองใหม่');
-                 });
+        function showMessage(msg, color = 'text-gray-500') {
+            const statusEl = document.getElementById('player-status');
+            statusEl.textContent = msg;
+            statusEl.className = `text-sm mt-1 font-medium ${color}`;
         }
 
-        function listenForGameStart(userRef) {
-            // ฟังการเปลี่ยนแปลงในข้อมูลผู้ใช้ของตัวเอง
-            onValue(userRef, (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    // หากสถานะเปลี่ยนเป็น 'in-game' และมี currentGameId ใหม่
-                    if (data.status === 'in-game' && data.currentGameId && currentGameId !== data.currentGameId) {
-                        startGame(data.currentGameId);
-                    } 
-                    // หากออกจากเกมแล้ว แต่ยังค้าง currentGameId อยู่
-                    else if (data.status !== 'in-game' && currentGameId) {
-                        cleanUpAfterGame(false); 
-                    }
-                    // หากสถานะเปลี่ยนจาก 'waiting' เป็น 'idle'
-                    else if (data.status === 'idle') {
-                         resetCreateRoomButton();
-                    }
-                }
-            }, (error) => console.error("Error listening for game start on user ref:", error));
+        function createModal(message) {
+             // Create a simple overlay modal for important messages
+            const existingModal = document.getElementById('app-modal');
+            if (existingModal) existingModal.remove();
+
+            const modalHtml = `
+                <div id="app-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                        <p class="text-lg font-semibold text-gray-800 mb-4">${message}</p>
+                        <button onclick="document.getElementById('app-modal').remove()" class="btn-primary px-6">
+                            ตกลง
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
         }
 
-        // --- Game Logic (Unchanged core logic) ---
-        function startGame(gameId) {
-            if (gameListener) {
-                gameListener(); 
-            }
-            currentGameId = gameId;
-            showScreen('game');
+        // --- Firebase Initialization and Auth ---
 
-            const gameRef = ref(db, `games/${currentGameId}`);
-            gameListener = onValue(gameRef, (snapshot) => {
-                if (!snapshot.exists()) {
-                    if(currentGameId){ 
-                        document.getElementById('app-container').insertAdjacentHTML('afterbegin', 
-                            `<div id="game-ended" class="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-center font-bold">
-                                เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว
-                            </div>`
-                        );
-                        setTimeout(() => {
-                            const endMsg = document.getElementById('game-ended');
-                            if(endMsg) endMsg.remove();
-                        }, 5000);
-                        cleanUpAfterGame(true);
-                    }
+        async function initFirebase() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    showMessage("ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase.", 'text-red-600');
                     return;
                 }
-                const gameState = snapshot.val();
-                renderGameState(gameState);
-            }, (error) => console.error("Error listening to game state:", error));
-        }
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
 
-        function renderGameState(state) {
-            if (!state) return;
-            const isPlayer1 = state.player1.id === userId;
-            const me = isPlayer1 ? state.player1 : state.player2;
-            const opponent = isPlayer1 ? state.player2 : state.player1;
-            
-            player1Name.textContent = state.player1.name;
-            player2Name.textContent = state.player2.name;
-
-            if (state.status === 'finished') {
-                questionText.textContent = "เกมจบแล้ว!";
-                optionAButton.classList.add('hidden');
-                optionBButton.classList.add('hidden');
-                gameStatus.innerHTML = '<p class="font-bold text-green-600">ขอบคุณที่เล่น!</p>';
-                nextQuestionButton.classList.add('hidden');
-                resultDisplay.classList.add('hidden');
-                endGameButton.classList.remove('hidden');
-                return;
-            }
-
-            const question = state.questions[state.currentQuestionIndex];
-            questionCounter.textContent = `คำถามที่ ${state.currentQuestionIndex + 1}/${state.questions.length}`;
-            questionText.textContent = `${question.a} หรือ ${question.b}`;
-            optionAButton.textContent = question.a;
-            optionBButton.textContent = question.b;
-
-            optionAButton.onclick = () => makeChoice('a');
-            optionBButton.onclick = () => makeChoice('b');
-
-            const bothChosen = me.choice && opponent.choice;
-            
-            if (bothChosen) {
-                gameStatus.classList.add('hidden');
-                resultDisplay.classList.remove('hidden');
-                
-                player1Choice.textContent = `${state.player1.name} เลือก: ${state.questions[state.currentQuestionIndex][state.player1.choice]}`;
-                player2Choice.textContent = `${state.player2.name} เลือก: ${state.questions[state.currentQuestionIndex][state.player2.choice]}`;
-
-                optionAButton.classList.add('btn-disabled');
-                optionBButton.classList.add('btn-disabled');
-                optionAButton.onclick = null;
-                optionBButton.onclick = null;
-                nextQuestionButton.classList.remove('hidden');
-            } else if (me.choice) {
-                gameStatus.classList.remove('hidden');
-                gameStatus.innerHTML = '<p class="text-yellow-500 font-bold">รอผู้เล่นอีกคนเลือก...</p>';
-                resultDisplay.classList.add('hidden');
-                optionAButton.classList.add('btn-disabled');
-                optionBButton.classList.add('btn-disabled');
-                optionAButton.onclick = null;
-                optionBButton.onclick = null;
-                nextQuestionButton.classList.add('hidden');
-            } else {
-                gameStatus.classList.remove('hidden');
-                gameStatus.innerHTML = '<p class="text-gray-500">กรุณาเลือกคำตอบของคุณ</p>';
-                resultDisplay.classList.add('hidden');
-                optionAButton.classList.remove('btn-disabled');
-                optionBButton.classList.remove('btn-disabled');
-                nextQuestionButton.classList.add('hidden');
-            }
-        }
-
-        function makeChoice(choice) {
-            get(ref(db, `games/${currentGameId}`)).then(snapshot => {
-                const state = snapshot.val();
-                if(state){
-                    const playerKey = state.player1.id === userId ? 'player1' : 'player2';
-                    update(ref(db), {
-                        [`games/${currentGameId}/${playerKey}/choice`]: choice
-                    }).catch(error => console.error("Error making choice:", error));
+                // 1. Authenticate user
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
                 }
+
+                // 2. Set up Auth listener
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        // Check if name is already set
+                        const storedName = localStorage.getItem('player-name');
+                        if (storedName) {
+                            userName = storedName;
+                            document.getElementById('player-name-input').value = userName;
+                            showMessage(`เข้าสู่ระบบแล้วในชื่อ: ${userName}`, 'text-green-600');
+                            startApp();
+                        } else {
+                            showMessage("กรุณาใส่ชื่อของคุณเพื่อเริ่ม", 'text-yellow-600');
+                            showScreen('screen-name');
+                        }
+                    } else {
+                        showMessage("ไม่ได้เข้าสู่ระบบ", 'text-red-600');
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase init/auth error:", error);
+                showMessage(`ข้อผิดพลาดในการเริ่มต้นระบบ: ${error.message}`, 'text-red-600');
+            }
+        }
+
+        // --- Room Management (Screen 2) ---
+
+        function startApp() {
+            // Check if player was in a room before
+            const storedRoomId = localStorage.getItem('current-room-id');
+            if (storedRoomId) {
+                currentRoomId = storedRoomId;
+                joinRoom(currentRoomId, userName, true); // Attempt to rejoin
+            } else {
+                showScreen('screen-rooms');
+                setupRoomsListListener();
+            }
+        }
+
+        function setupRoomsListListener() {
+            if (roomsListUnsubscribe) roomsListUnsubscribe();
+
+            const roomsCol = collection(db, getPublicCollectionPath('rooms'));
+            const q = query(roomsCol, where('status', 'in', ['WAITING', 'CHOOSING', 'REVEAL']));
+
+            roomsListUnsubscribe = onSnapshot(q, (snapshot) => {
+                const listEl = document.getElementById('rooms-list');
+                listEl.innerHTML = '';
+                let hasRooms = false;
+
+                snapshot.docs.forEach(docSnap => {
+                    hasRooms = true;
+                    const data = docSnap.data();
+                    const playersCount = Object.keys(data.players || {}).length;
+
+                    if (playersCount < MAX_PLAYERS) {
+                        const roomName = data.hostName ? `${data.hostName}'s Room` : `Room ${docSnap.id.substring(0, 4)}`;
+
+                        listEl.insertAdjacentHTML('beforeend', `
+                            <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-indigo-200">
+                                <p class="text-base font-medium text-gray-800 truncate">${roomName}</p>
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-sm font-semibold text-primary-color">${playersCount}/${MAX_PLAYERS}</span>
+                                    <button data-room-id="${docSnap.id}" class="btn-join text-sm px-3 py-1 bg-primary-color hover:bg-indigo-700 text-white rounded-md">
+                                        เข้าร่วม
+                                    </button>
+                                </div>
+                            </div>
+                        `);
+                    }
+                });
+
+                if (!hasRooms) {
+                    listEl.innerHTML = '<p class="text-gray-500 italic text-center">ยังไม่มีห้องเกมว่าง สร้างห้องใหม่ได้เลย!</p>';
+                }
+
+                // Add event listeners to new join buttons
+                listEl.querySelectorAll('.btn-join').forEach(button => {
+                    button.onclick = (e) => {
+                        const roomId = e.target.getAttribute('data-room-id');
+                        joinRoom(roomId, userName);
+                    };
+                });
+            }, (error) => {
+                console.error("Error fetching rooms list:", error);
+                document.getElementById('rooms-list').innerHTML = '<p class="text-red-500 italic text-center">ข้อผิดพลาดในการโหลดห้อง</p>';
             });
         }
-        
-        nextQuestionButton.addEventListener('click', () => {
-             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
-                const state = snapshot.val();
-                if (!state) return;
-                const nextIndex = state.currentQuestionIndex + 1;
-                
-                const updates = {};
-                if (nextIndex < state.questions.length) {
-                    updates[`games/${currentGameId}/currentQuestionIndex`] = nextIndex;
-                    updates[`games/${currentGameId}/player1/choice`] = null;
-                    updates[`games/${currentGameId}/player2/choice`] = null;
-                } else {
-                    updates[`games/${currentGameId}/status`] = 'finished';
-                }
-                update(ref(db), updates).catch(error => console.error("Error moving to next question:", error));
-             });
-        });
 
-        endGameButton.addEventListener('click', () => {
-             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
-                if(snapshot.exists()) {
-                    const state = snapshot.val();
-                    const updates = {};
-                    
-                    // ตั้งค่าสถานะผู้เล่นกลับเป็น 'idle' และล้าง currentGameId
-                    updates[`users/${state.player1.id}/status`] = 'idle';
-                    updates[`users/${state.player1.id}/currentGameId`] = null;
-                    updates[`users/${state.player2.id}/status`] = 'idle';
-                    updates[`users/${state.player2.id}/currentGameId`] = null;
-                    
-                    // ลบเกม
-                    updates[`games/${currentGameId}`] = null;
-                    
-                    update(ref(db), updates).catch(error => console.error("Error ending game:", error));
-                }
-             });
-             cleanUpAfterGame(true);
-        });
+        async function createRoom() {
+            if (!userId || !userName) return createModal('กรุณาใส่ชื่อผู้เล่นก่อน!');
 
-        function cleanUpAfterGame(shouldGoToLobby = true) {
-            // ล้างสถานะภายในเครื่องและใน DB
-            update(ref(db, `users/${userId}`), {
-                status: 'idle', 
-                currentGameId: null,
-                currentRoomId: null // Clear room ID
-            }).catch(error => console.error("Error cleaning up user data:", error));
+            // 1. Create initial room data
+            const newQuestion = getNextQuestion(0);
+            const initialRoomData = {
+                hostId: userId,
+                hostName: userName,
+                status: 'WAITING',
+                questionIndex: 0,
+                currentQuestion: newQuestion,
+                players: {
+                    [userId]: { name: userName, choice: null, score: 0, isHost: true }
+                },
+                createdAt: new Date().getTime()
+            };
 
-            currentGameId = null;
-            if (gameListener) {
-                gameListener(); 
-                gameListener = null;
-            }
-            
-            optionAButton.classList.remove('hidden');
-            optionBButton.classList.remove('hidden');
-            endGameButton.classList.add('hidden');
-
-            if(shouldGoToLobby) {
-                setupLobby(ref(db, `users/${userId}`));
+            const roomsCol = collection(db, getPublicCollectionPath('rooms'));
+            try {
+                const docRef = await addDoc(roomsCol, initialRoomData);
+                currentRoomId = docRef.id;
+                localStorage.setItem('current-room-id', currentRoomId);
+                showMessage(`สร้างห้อง ${currentRoomId.substring(0, 4)} สำเร็จ`, 'text-indigo-600');
+                showScreen('screen-game');
+                setupRoomGameListener(currentRoomId);
+            } catch (error) {
+                console.error("Error creating room:", error);
+                createModal(`สร้างห้องไม่สำเร็จ: ${error.message}`);
             }
         }
+
+        async function joinRoom(roomId, playerName, isRejoin = false) {
+            if (!userId || !playerName) return createModal('กรุณาใส่ชื่อผู้เล่นก่อน!');
+            if (roomsListUnsubscribe) roomsListUnsubscribe(); // Stop listening to room list
+
+            const roomRef = getRoomDocPath(roomId);
+
+            try {
+                const docSnap = await getDoc(roomRef);
+                if (!docSnap.exists()) {
+                    localStorage.removeItem('current-room-id');
+                    return createModal('ห้องเกมนี้ไม่มีอยู่แล้ว');
+                }
+
+                const roomData = docSnap.data();
+                const players = roomData.players || {};
+                const playersCount = Object.keys(players).length;
+
+                // Check if already in the room (rejoining)
+                if (players.hasOwnProperty(userId)) {
+                    currentRoomId = roomId;
+                    localStorage.setItem('current-room-id', currentRoomId);
+                    showMessage(`กลับเข้าร่วมห้อง ${roomId.substring(0, 4)}`, 'text-indigo-600');
+                    showScreen('screen-game');
+                    setupRoomGameListener(currentRoomId);
+                    return;
+                }
+
+                // Check if room is full
+                if (playersCount >= MAX_PLAYERS) {
+                    localStorage.removeItem('current-room-id');
+                    return createModal('ห้องเต็มแล้ว! กรุณาเลือกห้องอื่น');
+                }
+
+                // Join the room
+                const newPlayer = { name: playerName, choice: null, score: 0, isHost: false };
+
+                await updateDoc(roomRef, {
+                    [`players.${userId}`]: newPlayer
+                });
+
+                currentRoomId = roomId;
+                localStorage.setItem('current-room-id', currentRoomId);
+                showMessage(`เข้าร่วมห้อง ${roomId.substring(0, 4)} สำเร็จ`, 'text-indigo-600');
+                showScreen('screen-game');
+                setupRoomGameListener(currentRoomId);
+
+            } catch (error) {
+                console.error("Error joining room:", error);
+                createModal(`เข้าร่วมห้องไม่สำเร็จ: ${error.message}`);
+                localStorage.removeItem('current-room-id');
+                showScreen('screen-rooms');
+                setupRoomsListListener();
+            }
+        }
+
+        // --- Game Logic (Screen 3) ---
+
+        function setupRoomGameListener(roomId) {
+            if (roomSnapshotUnsubscribe) roomSnapshotUnsubscribe();
+
+            const roomRef = getRoomDocPath(roomId);
+
+            roomSnapshotUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    createModal('ห้องเกมถูกลบ/ปิดแล้ว! กลับสู่หน้าเลือกห้อง');
+                    leaveRoom(false);
+                    return;
+                }
+                updateGameUI(docSnap.data());
+            }, (error) => {
+                console.error("Error listening to room:", error);
+                createModal(`ข้อผิดพลาดในการซิงค์เกม: ${error.message}`);
+            });
+        }
+
+        function getNextQuestion(index) {
+            const nextIndex = index % ALL_QUESTIONS.length;
+            return ALL_QUESTIONS[nextIndex];
+        }
+
+        function updateGameUI(room) {
+            const players = Object.values(room.players || {});
+            const playerMap = room.players || {};
+            const isHost = room.hostId === userId;
+            const myPlayer = playerMap[userId] || {};
+
+            // 1. Update Room Info
+            document.getElementById('room-id-display').textContent = room.hostName ? room.hostName : roomSnapshotUnsubscribe.id.substring(0, 4);
+            document.getElementById('current-round').textContent = `รอบที่: ${room.questionIndex} / ${MAX_ROUNDS}`;
+
+            // 2. Update Player Scores/Names
+            const pIds = Object.keys(playerMap);
+            const p1Id = room.hostId;
+            const p2Id = pIds.find(id => id !== p1Id);
+
+            const p1 = playerMap[p1Id] || { name: 'รอผู้เล่น 1...', score: 0 };
+            const p2 = p2Id ? (playerMap[p2Id] || { name: 'รอผู้เล่น 2...', score: 0 }) : { name: 'รอผู้เล่น 2...', score: 0 };
+
+            document.getElementById('p1-name').textContent = `${p1.name} ${p1Id === userId ? '(คุณ)' : ''}`;
+            document.getElementById('p1-score').textContent = p1.score;
+            document.getElementById('p2-name').textContent = `${p2.name} ${p2Id === userId ? '(คุณ)' : ''}`;
+            document.getElementById('p2-score').textContent = p2.score;
+
+            const choice1Btn = document.getElementById('choice-1-btn');
+            const choice2Btn = document.getElementById('choice-2-btn');
+
+            choice1Btn.textContent = room.currentQuestion.t;
+            choice2Btn.textContent = room.currentQuestion.h;
+            choice1Btn.className = 'choice-button';
+            choice2Btn.className = 'choice-button';
+            choice1Btn.disabled = true;
+            choice2Btn.disabled = true;
+
+            // 3. Handle Game Status
+            const allChosen = players.length === MAX_PLAYERS && players.every(p => p.choice !== null);
+
+            document.getElementById('next-round-btn').classList.add('hidden');
+            document.getElementById('game-status-message').className = 'text-center text-2xl font-bold text-gray-700 min-h-[50px]';
+
+            if (room.questionIndex > MAX_ROUNDS) {
+                room.status = 'GAME_OVER';
+            }
+
+            switch (room.status) {
+                case 'WAITING':
+                    document.getElementById('game-status-message').textContent = players.length < MAX_PLAYERS
+                        ? 'กำลังรอผู้เล่นคนที่สอง...'
+                        : 'ผู้เล่นครบแล้ว! พร้อมเริ่มเกม';
+                    if (players.length === MAX_PLAYERS && isHost) {
+                        document.getElementById('next-round-btn').textContent = 'เริ่มเกม!';
+                        document.getElementById('next-round-btn').classList.remove('hidden');
+                        document.getElementById('next-round-btn').disabled = false;
+                    }
+                    break;
+
+                case 'CHOOSING':
+                    document.getElementById('game-status-message').textContent = 'เลือกสิ่งที่คุณชอบมากกว่า!';
+                    if (myPlayer.choice === null) {
+                        choice1Btn.disabled = false;
+                        choice2Btn.disabled = false;
+                    } else {
+                        document.getElementById('game-status-message').textContent = 'รอผู้เล่นคนอื่นเลือก...';
+                        if (myPlayer.choice === 't') choice1Btn.classList.add('chosen');
+                        if (myPlayer.choice === 'h') choice2Btn.classList.add('chosen');
+                    }
+                    if (allChosen) {
+                        // Immediately transition to REVEAL state if all chosen
+                        if (isHost) updateDoc(roomRef, { status: 'REVEAL' });
+                    }
+                    break;
+
+                case 'REVEAL':
+                    document.getElementById('game-status-message').textContent = 'ผลลัพธ์เปิดเผยแล้ว!';
+                    document.getElementById('game-status-message').classList.add('text-secondary-color');
+
+                    // Apply styles based on match
+                    if (p1.choice === p2.choice) {
+                        document.getElementById('game-status-message').textContent = 'ว้าว! เลือกเหมือนกันเลย!';
+                        if (myPlayer.choice === 't') choice1Btn.classList.add('winner');
+                        if (myPlayer.choice === 'h') choice2Btn.classList.add('winner');
+                    } else {
+                        document.getElementById('game-status-message').textContent = 'เลือกแตกต่างกัน!';
+                        if (myPlayer.choice === 't') choice1Btn.classList.add('loser');
+                        if (myPlayer.choice === 'h') choice2Btn.classList.add('loser');
+                    }
+
+                    // Show next round button
+                    if (isHost) {
+                        document.getElementById('next-round-btn').textContent = 'คำถามต่อไป';
+                        document.getElementById('next-round-btn').classList.remove('hidden');
+                        document.getElementById('next-round-btn').disabled = false;
+                    }
+                    break;
+
+                case 'GAME_OVER':
+                    document.getElementById('game-status-message').textContent = 'จบเกมแล้ว!';
+                    document.getElementById('game-status-message').classList.add('text-red-600');
+                    if (p1.score > p2.score) {
+                        createModal(`จบเกม! ${p1.name} ชนะด้วยคะแนน ${p1.score} - ${p2.score}`);
+                    } else if (p2.score > p1.score) {
+                        createModal(`จบเกม! ${p2.name} ชนะด้วยคะแนน ${p2.score} - ${p1.score}`);
+                    } else {
+                        createModal(`จบเกม! เสมอกันที่คะแนน ${p1.score} - ${p2.score}`);
+                    }
+
+                    if (isHost) {
+                        document.getElementById('next-round-btn').textContent = 'เริ่มเกมใหม่';
+                        document.getElementById('next-round-btn').classList.remove('hidden');
+                        document.getElementById('next-round-btn').onclick = () => resetRoom(room);
+                    }
+                    break;
+            }
+        }
+
+        async function makeChoice(choice) {
+            if (!currentRoomId || !userId || !userName) return;
+
+            const roomRef = getRoomDocPath(currentRoomId);
+            const choiceBtn = choice === 't' ? document.getElementById('choice-1-btn') : document.getElementById('choice-2-btn');
+
+            // Disable buttons and mark selection
+            document.getElementById('choice-1-btn').disabled = true;
+            document.getElementById('choice-2-btn').disabled = true;
+            choiceBtn.classList.add('chosen');
+
+            try {
+                // Update player's choice in the room
+                await updateDoc(roomRef, {
+                    [`players.${userId}.choice`]: choice
+                });
+
+                showMessage('บันทึกการเลือกแล้ว! รอผู้เล่นคนอื่น...', 'text-orange-600');
+            } catch (error) {
+                console.error("Error making choice:", error);
+                createModal(`บันทึกการเลือกไม่สำเร็จ: ${error.message}`);
+            }
+        }
+
+        async function nextRound() {
+            if (!currentRoomId || !userId) return;
+
+            const roomRef = getRoomDocPath(currentRoomId);
+            const docSnap = await getDoc(roomRef);
+            if (!docSnap.exists() || docSnap.data().hostId !== userId) return; // Only host can advance
+
+            const room = docSnap.data();
+            let newStatus = 'CHOOSING';
+            let newIndex = room.questionIndex;
+            let newPlayers = room.players;
+
+            // 1. Calculate Score (only if coming from REVEAL or WAITING to first round)
+            if (room.status === 'REVEAL') {
+                const pIds = Object.keys(newPlayers);
+                const p1Choice = newPlayers[pIds[0]].choice;
+                const p2Choice = newPlayers[pIds[1]].choice;
+
+                if (p1Choice === p2Choice) {
+                    // Match! Both get a point
+                    newPlayers[pIds[0]].score += 1;
+                    newPlayers[pIds[1]].score += 1;
+                }
+
+                newIndex += 1; // Advance round index
+
+                if (newIndex > MAX_ROUNDS) {
+                    newStatus = 'GAME_OVER';
+                }
+            } else if (room.status === 'WAITING') {
+                 newIndex = 1; // Start the first round
+            }
+
+
+            // 2. Reset Choices & Get New Question
+            for (const id in newPlayers) {
+                newPlayers[id].choice = null;
+            }
+
+            const newQuestion = getNextQuestion(newIndex);
+
+            // 3. Update Firestore
+            try {
+                await updateDoc(roomRef, {
+                    status: newStatus,
+                    questionIndex: newIndex,
+                    currentQuestion: newQuestion,
+                    players: newPlayers // Update scores and reset choices
+                });
+            } catch (error) {
+                console.error("Error advancing round:", error);
+                createModal(`ไปรอบต่อไปไม่สำเร็จ: ${error.message}`);
+            }
+        }
+
+        async function resetRoom(room) {
+             if (!currentRoomId || room.hostId !== userId) return; // Only host can reset
+             const roomRef = getRoomDocPath(currentRoomId);
+
+             let newPlayers = {};
+             for (const id in room.players) {
+                 newPlayers[id] = { ...room.players[id], score: 0, choice: null };
+             }
+
+             const newQuestion = getNextQuestion(1);
+
+             try {
+                 await updateDoc(roomRef, {
+                     status: 'CHOOSING',
+                     questionIndex: 1,
+                     currentQuestion: newQuestion,
+                     players: newPlayers
+                 });
+             } catch (error) {
+                 console.error("Error resetting room:", error);
+                 createModal(`รีเซ็ตห้องไม่สำเร็จ: ${error.message}`);
+             }
+        }
+
+        function leaveRoom(navigate = true) {
+            if (roomSnapshotUnsubscribe) {
+                roomSnapshotUnsubscribe();
+                roomSnapshotUnsubscribe = null;
+            }
+
+            if (currentRoomId && userId) {
+                const roomRef = getRoomDocPath(currentRoomId);
+                // Remove player from the room document
+                updateDoc(roomRef, {
+                    [`players.${userId}`]: deleteField()
+                }).catch(e => console.warn("Could not delete player field (room might be gone):", e));
+            }
+
+            currentRoomId = null;
+            localStorage.removeItem('current-room-id');
+            showMessage(`ออกจากห้องเกมแล้ว`, 'text-blue-600');
+
+            if (navigate) {
+                showScreen('screen-rooms');
+                setupRoomsListListener();
+            }
+        }
+
+        // --- Event Listeners ---
+
+        document.getElementById('set-name-btn').onclick = () => {
+            const inputName = document.getElementById('player-name-input').value.trim();
+            if (inputName.length < 2 || inputName.length > 15) {
+                createModal('กรุณาใส่ชื่อระหว่าง 2-15 ตัวอักษร');
+                return;
+            }
+            userName = inputName;
+            localStorage.setItem('player-name', userName);
+            showMessage(`บันทึกชื่อ: ${userName}`, 'text-green-600');
+            startApp();
+        };
+
+        document.getElementById('create-room-btn').onclick = createRoom;
+
+        document.getElementById('leave-room-btn').onclick = () => {
+             createModal('แน่ใจหรือไม่ว่าต้องการออกจากห้อง?'); // Using the simplified modal
+             document.getElementById('app-modal').querySelector('button').textContent = 'ยกเลิก';
+             const confirmBtn = document.createElement('button');
+             confirmBtn.className = 'btn-primary px-6 ml-3 bg-red-600 hover:bg-red-700';
+             confirmBtn.textContent = 'ยืนยัน';
+             confirmBtn.onclick = () => {
+                 document.getElementById('app-modal').remove();
+                 leaveRoom();
+             };
+             document.getElementById('app-modal').querySelector('.text-center').appendChild(confirmBtn);
+        };
+
+
+        document.getElementById('choice-1-btn').onclick = () => makeChoice('t');
+        document.getElementById('choice-2-btn').onclick = () => makeChoice('h');
+        document.getElementById('next-round-btn').onclick = nextRound;
+
+
+        // Start the application flow
+        initFirebase();
+
+        // Must define deleteField function from Firestore SDK to use it
+        // The import { deleteDoc } is already there, but we need the field delete constant
+        const deleteField = {
+            firestore: {
+                delete: true
+            }
+        };
+
     </script>
 </body>
 </html>
