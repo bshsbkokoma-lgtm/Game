@@ -43,33 +43,34 @@
             <p id="login-error" class="text-red-500 mt-2 hidden">กรุณาใส่ชื่อของคุณ</p>
         </div>
 
-        <!-- Lobby Screen -->
+        <!-- Lobby Screen (New Lobby System) -->
         <div id="lobby-screen" class="hidden">
             <div class="card mb-4">
                 <h2 class="text-2xl font-bold text-gray-800 mb-1">สวัสดี, <span id="user-name-display" class="text-blue-500"></span>!</h2>
-                <p class="text-gray-500">เชิญผู้เล่นที่ออนไลน์อยู่เพื่อเริ่มเกม</p>
-            </div>
+                <p class="text-gray-500 mb-4">เลือกห้องเพื่อเข้าร่วม หรือสร้างห้องใหม่</p>
 
-            <div class="card mb-4">
-                <h3 class="text-xl font-bold mb-3">คำเชิญ</h3>
-                <div id="invitations-list" class="space-y-2">
-                    <p class="text-gray-400">ยังไม่มีคำเชิญ...</p>
-                </div>
+                <!-- Create Room Button -->
+                <button id="create-room-button" class="btn bg-red-500 hover:bg-red-600 active:scale-95 mb-4">
+                    สร้างห้องใหม่ (1 VS 1)
+                </button>
             </div>
-
+            
+            <!-- Available Rooms List -->
             <div class="card">
-                <h3 class="text-xl font-bold mb-3">ผู้เล่นที่ออนไลน์</h3>
-                <ul id="player-list" class="space-y-2">
-                    <!-- สถานะการโหลดเริ่มต้นจะถูกกำหนดใน JS -->
-                    <li class="text-center text-gray-400">กำลังโหลดรายชื่อผู้เล่น...</li>
+                <h3 class="text-xl font-bold mb-3 flex justify-between items-center">
+                    ห้องที่เปิดรออยู่ <span id="room-count" class="text-gray-400 text-sm">(0 ห้อง)</span>
+                </h3>
+                <ul id="rooms-list" class="space-y-3">
+                    <li class="text-center text-gray-400">กำลังโหลดห้อง...</li>
                 </ul>
             </div>
-             <div class="mt-4 text-center text-xs text-gray-400">
+
+            <div class="mt-4 text-center text-xs text-gray-400">
                 <p>User ID ของคุณ: <span id="user-id-display"></span></p>
             </div>
         </div>
 
-        <!-- Game Screen -->
+        <!-- Game Screen (No change in core game elements) -->
         <div id="game-screen" class="hidden">
             <div class="card text-center">
                 <div class="flex justify-between items-center mb-4 text-sm font-semibold">
@@ -104,12 +105,11 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, onDisconnect, remove, push, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, onValue, onDisconnect, remove, push, get, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
-        // --- Firebase Config (ใช้ค่าเดิมจากโค้ดที่คุณส่งมา) ---
-        // **ข้อควรจำ: ต้องตั้งค่า Realtime Database Rules ในคอนโซล Firebase ให้เปิดอ่าน/เขียนด้วย**
-        // ตัวอย่างกฎที่ต้องตั้ง: { "rules": { ".read": "true", ".write": "true" } }
+        // --- Firebase Config ---
+        // **ย้ำอีกครั้ง: ต้องตั้งค่า Realtime Database Rules ให้เป็น ".read": "true", ".write": "true" เพื่อให้ระบบนี้ทำงานได้**
         const firebaseConfig = {
             apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
             authDomain: "game-8ede6.firebaseapp.com",
@@ -134,10 +134,13 @@
         const loginError = document.getElementById('login-error');
         const userNameDisplay = document.getElementById('user-name-display');
         const userIdDisplay = document.getElementById('user-id-display');
-        const playerList = document.getElementById('player-list');
-        const invitationsList = document.getElementById('invitations-list');
         
-        // Game screen elements
+        // New/Updated Lobby Elements
+        const createRoomButton = document.getElementById('create-room-button');
+        const roomsList = document.getElementById('rooms-list');
+        const roomCount = document.getElementById('room-count');
+        
+        // Game screen elements (unchanged)
         const player1Name = document.getElementById('player1-name');
         const player2Name = document.getElementById('player2-name');
         const questionCounter = document.getElementById('question-counter');
@@ -177,50 +180,60 @@
                 userIdDisplay.textContent = userId;
                 const userRef = ref(db, `users/${userId}`);
                 
-                // ตรวจสอบว่าผู้ใช้มีชื่ออยู่ก่อนหน้าหรือไม่
                 get(userRef).then((snapshot) => {
                     if (snapshot.exists() && snapshot.val().name) {
-                        // ผู้ใช้กลับมา (Returning user)
                         completeLoginAndSetup(snapshot.val().name, userRef);
                     } else {
-                        // ผู้ใช้ใหม่หรือยังไม่เคยตั้งชื่อ
                         showScreen('login');
                     }
                 }).catch(error => {
-                    console.error("Error checking existing user data:", error);
+                    console.error("Error checking existing user data (Check Rules!):", error);
                     showScreen('login');
                 });
             } else {
-                // หากยังไม่ล็อกอิน ให้ล็อกอินแบบไม่ระบุตัวตน
                 signInAnonymously(auth).catch((error) => console.error("Anonymous sign in failed", error));
             }
         });
         
         /**
-         * FIX: ฟังก์ชันนี้รับรองว่าข้อมูลผู้ใช้ถูกเขียนลง DB อย่างครบถ้วน
-         * (ชื่อ, online: true, status: 'idle') ก่อนจะเริ่ม Lobby listeners
+         * Ensures user data is written before starting lobby listeners and sets up presence.
          */
         function completeLoginAndSetup(name, userRef) {
             userName = name;
-            
-            // 1. เขียนข้อมูลผู้ใช้ปัจจุบันลง DB เพื่อให้มั่นใจว่า online: true และ status: 'idle'
+            userNameDisplay.textContent = userName;
+
+            // 1. Write initial/current user data to DB
             set(userRef, {
                 name: userName,
                 online: true,
                 status: 'idle'
-            });
+            }).catch(error => console.error("Error setting initial user data (Check Write Rules!):", error));
 
-            // 2. ตั้งค่า Presence (On Disconnect)
+            // 2. Set Presence (On Disconnect) - Clean up room if user leaves while waiting
             onValue(ref(db, '.info/connected'), (snap) => {
                 if (snap.val() === true) {
-                    // อัปเดตสถานะออนไลน์เมื่อเชื่อมต่อ
                     set(ref(db, `users/${userId}/online`), true); 
-                    // ตั้งค่า onDisconnect
-                    onDisconnect(userRef).update({ online: false, status: 'offline' });
-                }
-            });
+                    
+                    const onDisconnectRef = onDisconnect(userRef);
+                    onDisconnectRef.update({ online: false, status: 'offline' })
+                        .catch(error => console.error("Error setting onDisconnect user status:", error));
+                    
+                    // Clean up any room the user created if they leave while waiting
+                    get(ref(db, `users/${userId}/currentRoomId`)).then(snapshot => {
+                        if (snapshot.exists()) {
+                            const currentRoomId = snapshot.val();
+                            if (currentRoomId) {
+                                onDisconnect(ref(db, `publicRooms/${currentRoomId}`)).remove()
+                                    .catch(error => console.error("Error setting onDisconnect room removal:", error));
+                            }
+                        }
+                    });
 
-            // 3. เริ่ม Lobby
+                }
+            }, (error) => console.error("Error checking connection status:", error));
+
+
+            // 3. Start Lobby listeners
             setupLobby(userRef);
         }
 
@@ -238,165 +251,202 @@
             const name = nameInput.value.trim();
             if (name) {
                 const userRef = ref(db, `users/${userId}`);
-                completeLoginAndSetup(name, userRef); // ใช้ฟังก์ชันรวมที่แก้ไขแล้ว
+                completeLoginAndSetup(name, userRef);
                 loginError.classList.add('hidden');
             } else {
                 loginError.classList.remove('hidden');
             }
         });
         
-        // --- Lobby Logic ---
+        // --- Lobby System Logic (New) ---
         function setupLobby(userRef) {
-            userNameDisplay.textContent = userName;
             showScreen('lobby');
-            listenForPlayers();
-            listenForInvitations();
+            listenForRooms();
             listenForGameStart(userRef);
+
+            createRoomButton.onclick = createRoom;
         }
 
-        function listenForPlayers() {
-            const usersRef = ref(db, 'users');
+        function createRoom() {
+            createRoomButton.classList.add('btn-disabled');
+            createRoomButton.textContent = 'กำลังสร้างห้อง...';
+            createRoomButton.onclick = null;
+
+            const roomRef = push(ref(db, 'publicRooms'));
+            const roomId = roomRef.key;
+
+            const roomData = {
+                creatorId: userId,
+                creatorName: userName,
+                status: 'waiting', // Waiting for player 2
+                createdAt: Date.now()
+            };
+
+            // 1. Write room data
+            set(roomRef, roomData)
+            .then(() => {
+                // 2. Update user status and link to the room
+                return update(ref(db, `users/${userId}`), {
+                    status: 'waiting', // New status for waiting in lobby
+                    currentRoomId: roomId
+                });
+            })
+            .then(() => {
+                console.log(`Room created: ${roomId}. Waiting for player 2.`);
+                // UI feedback is handled by listenForRooms and listenForGameStart
+            })
+            .catch(error => {
+                console.error("Error creating room:", error);
+                // Reset button on failure
+                resetCreateRoomButton();
+                // Show error message
+                roomsList.insertAdjacentHTML('afterbegin', 
+                    `<li class="text-center text-red-500 font-bold bg-red-50 p-3 rounded-lg border border-red-300">
+                        สร้างห้องล้มเหลว! โปรดตรวจสอบการเชื่อมต่อและกฎ Write Rules
+                    </li>`);
+            });
+        }
+        
+        function resetCreateRoomButton() {
+            createRoomButton.classList.remove('btn-disabled');
+            createRoomButton.textContent = 'สร้างห้องใหม่ (1 VS 1)';
+            createRoomButton.onclick = createRoom;
+        }
+
+
+        function listenForRooms() {
+            const roomsRef = ref(db, 'publicRooms');
             
             // แสดงสถานะ "กำลังโหลด" ขณะรอข้อมูล
-            playerList.innerHTML = '<li class="text-center text-gray-400">กำลังโหลดรายชื่อผู้เล่น...</li>'; 
+            roomsList.innerHTML = '<li class="text-center text-gray-400">กำลังโหลดห้อง...</li>'; 
 
-            onValue(usersRef, (snapshot) => {
-                playerList.innerHTML = '';
-                const users = snapshot.val();
-                let onlineCount = 0;
+            onValue(roomsRef, (snapshot) => {
+                roomsList.innerHTML = '';
+                const rooms = snapshot.val();
+                const roomKeys = rooms ? Object.keys(rooms) : [];
                 
-                if (users) {
-                    Object.keys(users).forEach(uid => {
-                        // **นี่คือเงื่อนไขที่ผู้เล่นจะแสดง:**
-                        // 1. ต้อง online: true 
-                        // 2. ต้องไม่ใช่ผู้เล่นปัจจุบัน (uid !== userId)
-                        if (users[uid].online === true && uid !== userId) { 
-                            onlineCount++;
-                            const user = users[uid];
-                            const li = document.createElement('li');
-                            li.className = 'flex justify-between items-center bg-gray-50 p-2 rounded-lg';
-                            
-                            const statusText = user.status === 'in-game' ? 'กำลังเล่น' : 'ว่าง';
-                            const statusColor = user.status === 'in-game' ? 'text-yellow-600' : 'text-gray-500';
+                roomCount.textContent = `(${roomKeys.length} ห้อง)`;
 
+                if (roomKeys.length > 0) {
+                    roomKeys.forEach(roomId => {
+                        const room = rooms[roomId];
+                        
+                        // ไม่แสดงห้องที่ตัวเองสร้างและกำลังรออยู่ (เพื่อไม่ให้ Join ตัวเอง)
+                        if (room.creatorId === userId && room.status === 'waiting') {
+                             roomsList.insertAdjacentHTML('afterbegin', `
+                                <li id="my-waiting-room" class="flex justify-between items-center bg-yellow-100 p-3 rounded-lg border-l-4 border-yellow-500">
+                                    <span class="font-bold text-yellow-800">ห้องของคุณ: ${room.creatorName}</span>
+                                    <span class="text-sm text-yellow-600">รอผู้เล่น...</span>
+                                </li>
+                            `);
+                             // Disable create room button if already waiting in a room
+                             createRoomButton.classList.add('btn-disabled');
+                             createRoomButton.textContent = 'คุณกำลังรอในห้อง...';
+                             createRoomButton.onclick = null;
+                            return;
+                        }
+
+                        // แสดงห้องที่คนอื่นสร้างและพร้อมเข้าร่วม
+                        if (room.status === 'waiting' && room.creatorId !== userId) {
+                            const li = document.createElement('li');
+                            li.className = 'flex justify-between items-center bg-gray-50 p-3 rounded-lg border-l-4 border-blue-500';
+                            
                             const nameSpan = document.createElement('span');
-                            nameSpan.innerHTML = `${user.name} <span class="${statusColor} text-sm">(${statusText})</span>`;
+                            nameSpan.innerHTML = `<span class="font-semibold">${room.creatorName}</span> <span class="text-gray-500 text-sm">กำลังรอ</span>`;
                             li.appendChild(nameSpan);
 
-                            if(user.status === 'idle') {
-                                const inviteButton = document.createElement('button');
-                                inviteButton.textContent = 'เชิญ';
-                                inviteButton.className = 'bg-blue-500 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-600';
-                                inviteButton.onclick = () => sendInvitation(uid, user.name);
-                                li.appendChild(inviteButton);
-                            }
-                            playerList.appendChild(li);
+                            const joinButton = document.createElement('button');
+                            joinButton.textContent = 'เข้าร่วม';
+                            joinButton.className = 'bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600';
+                            joinButton.onclick = () => joinRoom(roomId, room.creatorId, room.creatorName);
+                            li.appendChild(joinButton);
+                            roomsList.appendChild(li);
                         }
                     });
                 }
                 
-                // หากโหลดเสร็จแล้วแต่ไม่มีผู้เล่นอื่นออนไลน์
-                if (onlineCount === 0) {
-                    playerList.innerHTML = '<li class="text-center text-gray-400">ไม่มีผู้เล่นอื่นออนไลน์</li>';
+                // If no rooms are available or I'm waiting in my room
+                if (roomKeys.length === 0) {
+                    roomsList.innerHTML = '<li class="text-center text-gray-400">ยังไม่มีห้องที่เปิดรออยู่</li>';
                 }
+
+                // If my room is not found (meaning the game started or my room was deleted)
+                const myRoomElement = document.getElementById('my-waiting-room');
+                if (!myRoomElement && roomKeys.some(id => rooms[id].creatorId === userId && rooms[id].status === 'waiting')) {
+                    // Do nothing, still waiting, listener handles my room
+                } else if (!roomKeys.some(id => rooms[id].creatorId === userId)) {
+                    // Reset button if I'm not waiting in any room
+                    resetCreateRoomButton();
+                }
+
             }, (error) => {
                  // แสดงข้อความใน UI และ Console หากการเชื่อมต่อมีปัญหา
                  console.error("Firebase Read Error (Check Rules!):", error);
-                 playerList.innerHTML = '<li class="text-center text-red-500 font-bold">ไม่สามารถโหลดรายชื่อผู้เล่นได้! โปรดตรวจสอบกฎความปลอดภัยของ Firebase</li>';
+                 roomsList.innerHTML = '<li class="text-center text-red-600 font-bold bg-red-50 p-3 rounded-lg border border-red-300">ไม่สามารถโหลดรายชื่อห้องได้! <br/>โปรดตรวจสอบกฎความปลอดภัยของ Realtime Database ให้เป็น ".read": "true"</li>';
             });
         }
         
-        function sendInvitation(targetId, targetName) {
-            const invitationRef = ref(db, `invitations/${targetId}/${userId}`);
-            set(invitationRef, {
-                senderName: userName,
-                senderId: userId
-            });
-            // ใช้วิธีแสดงผลใน UI แทน alert
-            document.getElementById('invitations-list').insertAdjacentHTML('beforebegin', 
-                `<div id="invite-sent" class="bg-blue-100 text-blue-700 p-2 rounded-lg mb-2 transition-opacity duration-300">
-                    ส่งคำเชิญไปที่ ${targetName} แล้ว
-                </div>`
-            );
-            setTimeout(() => {
-                const sentMsg = document.getElementById('invite-sent');
-                if(sentMsg) sentMsg.remove();
-            }, 3000);
-        }
+        function joinRoom(roomId, creatorId, creatorName) {
+             const gameId = push(ref(db, 'games')).key;
+             const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
+             
+             const gameData = {
+                 player1: { id: creatorId, name: creatorName, choice: null }, // Creator is Player 1
+                 player2: { id: userId, name: userName, choice: null },       // Joiner is Player 2
+                 currentQuestionIndex: 0,
+                 questions: shuffledQuestions,
+                 status: 'playing'
+             };
 
-        function listenForInvitations() {
-             const invitationsRef = ref(db, `invitations/${userId}`);
-             onValue(invitationsRef, (snapshot) => {
-                invitationsList.innerHTML = '';
-                const invitations = snapshot.val();
-                if(invitations) {
-                    Object.keys(invitations).forEach(senderId => {
-                        const inv = invitations[senderId];
-                        const div = document.createElement('div');
-                        div.className = 'flex justify-between items-center bg-green-50 p-2 rounded-lg';
-                        div.innerHTML = `<span>${inv.senderName} ชวนคุณเล่นเกม</span>`;
-                        
-                        const acceptButton = document.createElement('button');
-                        acceptButton.textContent = 'ยอมรับ';
-                        acceptButton.className = 'bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600';
-                        acceptButton.onclick = () => acceptInvitation(senderId);
-                        div.appendChild(acceptButton);
-                        invitationsList.appendChild(div);
-                    });
-                } else {
-                    invitationsList.innerHTML = '<p class="text-gray-400">ยังไม่มีคำเชิญ...</p>';
-                }
-             });
-        }
-        
-        function acceptInvitation(senderId) {
-            const gameId = push(ref(db, 'games')).key;
-            const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
+             // 1. สร้างเกมใหม่
+             // 2. อัปเดตสถานะผู้เล่นทั้งสอง
+             // 3. ลบห้องสาธารณะทิ้ง
+             const updates = {};
+             updates[`games/${gameId}`] = gameData;
+             updates[`users/${creatorId}/status`] = 'in-game';
+             updates[`users/${creatorId}/currentGameId`] = gameId;
+             updates[`users/${creatorId}/currentRoomId`] = null; // Clear room ID
+             updates[`users/${userId}/status`] = 'in-game';
+             updates[`users/${userId}/currentGameId`] = gameId;
+             updates[`publicRooms/${roomId}`] = null; // Delete the room
 
-            get(ref(db, `users/${senderId}/name`)).then(snapshot => {
-                const senderName = snapshot.exists() ? snapshot.val() : 'Player 1';
-                
-                const gameData = {
-                    player1: { id: senderId, name: senderName, choice: null },
-                    player2: { id: userId, name: userName, choice: null },
-                    currentQuestionIndex: 0,
-                    questions: shuffledQuestions,
-                    status: 'playing'
-                };
-                
-                // สร้างเกมและอัปเดตสถานะผู้เล่นพร้อมกัน
-                const updates = {};
-                updates[`games/${gameId}`] = gameData;
-                updates[`users/${userId}/status`] = 'in-game';
-                updates[`users/${userId}/currentGameId`] = gameId;
-                updates[`users/${senderId}/status`] = 'in-game';
-                updates[`users/${senderId}/currentGameId`] = gameId;
-                
-                // ล้างคำเชิญทั้งหมดสำหรับผู้เล่นทั้งสอง
-                updates[`invitations/${userId}`] = null;
-                updates[`invitations/${senderId}`] = null;
-
-                ref(db).update(updates).catch(error => console.error("Error accepting invitation and starting game:", error));
-            }).catch(error => console.error("Error getting sender name:", error));
+             update(ref(db), updates)
+                 .then(() => {
+                    console.log(`Game started: ${gameId}`);
+                    // Player 1 (Creator) will automatically receive the update via listenForGameStart
+                    // Player 2 (Joiner) will also go to game screen via listenForGameStart
+                 })
+                 .catch(error => {
+                     console.error("Error joining room and starting game:", error);
+                     alert('ไม่สามารถเข้าร่วมเกมได้! โปรดลองใหม่');
+                 });
         }
 
         function listenForGameStart(userRef) {
+            // ฟังการเปลี่ยนแปลงในข้อมูลผู้ใช้ของตัวเอง
             onValue(userRef, (snapshot) => {
                 const data = snapshot.val();
-                // ตรวจสอบสถานะการเล่นและ gameId เพื่อเริ่มเกม
-                if (data && data.status === 'in-game' && data.currentGameId && currentGameId !== data.currentGameId) {
-                    startGame(data.currentGameId);
-                } else if (data && data.status !== 'in-game' && currentGameId) {
-                    // กรณีที่ผู้เล่นอีกคนจบเกมหรือออกไปแล้ว และสถานะของเราถูกเปลี่ยนเป็น 'idle'
-                    cleanUpAfterGame(false); // เรียก cleanup โดยไม่แจ้งเตือน
+                if (data) {
+                    // หากสถานะเปลี่ยนเป็น 'in-game' และมี currentGameId ใหม่
+                    if (data.status === 'in-game' && data.currentGameId && currentGameId !== data.currentGameId) {
+                        startGame(data.currentGameId);
+                    } 
+                    // หากออกจากเกมแล้ว แต่ยังค้าง currentGameId อยู่
+                    else if (data.status !== 'in-game' && currentGameId) {
+                        cleanUpAfterGame(false); 
+                    }
+                    // หากสถานะเปลี่ยนจาก 'waiting' เป็น 'idle'
+                    else if (data.status === 'idle') {
+                         resetCreateRoomButton();
+                    }
                 }
-            });
+            }, (error) => console.error("Error listening for game start on user ref:", error));
         }
 
-        // --- Game Logic ---
+        // --- Game Logic (Unchanged core logic) ---
         function startGame(gameId) {
             if (gameListener) {
-                gameListener(); // ยกเลิก Listener ของเกมเก่าหากมี
+                gameListener(); 
             }
             currentGameId = gameId;
             showScreen('game');
@@ -404,9 +454,7 @@
             const gameRef = ref(db, `games/${currentGameId}`);
             gameListener = onValue(gameRef, (snapshot) => {
                 if (!snapshot.exists()) {
-                    // ผู้เล่นอีกฝ่ายลบเกมออกไป
                     if(currentGameId){ 
-                        // ใช้วิธีแสดงผลใน UI แทน alert
                         document.getElementById('app-container').insertAdjacentHTML('afterbegin', 
                             `<div id="game-ended" class="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-center font-bold">
                                 เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว
@@ -416,13 +464,13 @@
                             const endMsg = document.getElementById('game-ended');
                             if(endMsg) endMsg.remove();
                         }, 5000);
-                        cleanUpAfterGame(true); // ทำความสะอาด state
+                        cleanUpAfterGame(true);
                     }
                     return;
                 }
                 const gameState = snapshot.val();
                 renderGameState(gameState);
-            });
+            }, (error) => console.error("Error listening to game state:", error));
         }
 
         function renderGameState(state) {
@@ -492,10 +540,9 @@
                 const state = snapshot.val();
                 if(state){
                     const playerKey = state.player1.id === userId ? 'player1' : 'player2';
-                    // ใช้ update แทน set เพื่ออัปเดตแค่ choice
-                    ref(db).update({
+                    update(ref(db), {
                         [`games/${currentGameId}/${playerKey}/choice`]: choice
-                    });
+                    }).catch(error => console.error("Error making choice:", error));
                 }
             });
         }
@@ -514,12 +561,11 @@
                 } else {
                     updates[`games/${currentGameId}/status`] = 'finished';
                 }
-                ref(db).update(updates).catch(error => console.error("Error moving to next question:", error));
+                update(ref(db), updates).catch(error => console.error("Error moving to next question:", error));
              });
         });
 
         endGameButton.addEventListener('click', () => {
-             // ผู้เล่นคนที่กดจบเกม จะเป็นคนจัดการล้างข้อมูล
              get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 if(snapshot.exists()) {
                     const state = snapshot.val();
@@ -534,20 +580,20 @@
                     // ลบเกม
                     updates[`games/${currentGameId}`] = null;
                     
-                    ref(db).update(updates).then(() => {
-                        // การทำความสะอาด state ภายในเครื่องจะเกิดขึ้นใน listenForGameStart หรือ cleanUpAfterGame 
-                        // ขึ้นอยู่กับว่าการอัปเดตข้อมูลถูกส่งไปก่อนหรือไม่
-                    }).catch(error => console.error("Error ending game:", error));
+                    update(ref(db), updates).catch(error => console.error("Error ending game:", error));
                 }
              });
              cleanUpAfterGame(true);
         });
 
         function cleanUpAfterGame(shouldGoToLobby = true) {
-            // ล้างสถานะภายในเครื่อง
-            set(ref(db, `users/${userId}/status`), 'idle');
-            remove(ref(db, `users/${userId}/currentGameId`));
-            
+            // ล้างสถานะภายในเครื่องและใน DB
+            update(ref(db, `users/${userId}`), {
+                status: 'idle', 
+                currentGameId: null,
+                currentRoomId: null // Clear room ID
+            }).catch(error => console.error("Error cleaning up user data:", error));
+
             currentGameId = null;
             if (gameListener) {
                 gameListener(); 
