@@ -135,8 +135,30 @@
         import { setLogLevel, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- ส่วนที่ 1: การตั้งค่า Firebase ที่ถูกต้องตามสภาพแวดล้อม ---
-        // ตรวจสอบตัวแปร Global ที่ระบบเตรียมไว้ (บังคับใช้เพื่อแก้ไข [invalid-argument])
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id-fallback';
+        let firebaseConfig = null;
+        let appId = 'default-app-id-fallback';
+
+        try {
+            // 1. Access App ID (string)
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id-fallback';
+
+            // 2. Access and Parse Firebase Config (JSON string)
+            const firebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            
+            if (firebaseConfigJson) {
+                // ต้องมีการป้องกันการ parse ที่ล้มเหลว
+                firebaseConfig = JSON.parse(firebaseConfigJson);
+            }
+
+        } catch (e) {
+            console.error("FATAL: Error accessing or parsing global Firebase configs:", e);
+            // แสดงข้อความผิดพลาดทันทีหากการดึงค่าล้มเหลว
+            const userStatusDisplayEl = document.getElementById('user-status-display');
+            userStatusDisplayEl.textContent = 'สถานะ: ข้อผิดพลาดการตั้งค่า';
+            const globalMessageEl = document.getElementById('global-message');
+            globalMessageEl.textContent = 'ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase (กรุณารีโหลด)';
+            globalMessageEl.classList.remove('hidden');
+        }
 
         // --- Firebase Globals ---
         let db = null;
@@ -789,13 +811,9 @@
         // --- Firebase Initialization ---
 
         async function initFirebase() {
-            // ดึง Firebase Config จากตัวแปร Global
-            const firebaseConfig = typeof __firebase_config !== 'undefined' 
-                ? JSON.parse(__firebase_config) 
-                : null;
-            
-            if (!firebaseConfig) {
-                 console.error("Firebase Config is missing. Cannot initialize.");
+            // Check if global configs were successfully parsed
+            if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
+                 console.error("Firebase Config is missing or empty. Cannot initialize.");
                  showGlobalMessage('ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase', 'error');
                  return;
             }
