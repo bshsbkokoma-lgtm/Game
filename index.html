@@ -60,6 +60,7 @@
             <div class="card">
                 <h3 class="text-xl font-bold mb-3">ผู้เล่นที่ออนไลน์</h3>
                 <ul id="player-list" class="space-y-2">
+                    <!-- สถานะการโหลดเริ่มต้นจะถูกกำหนดใน JS -->
                     <li class="text-center text-gray-400">กำลังโหลดรายชื่อผู้เล่น...</li>
                 </ul>
             </div>
@@ -106,9 +107,9 @@
         import { getDatabase, ref, set, onValue, onDisconnect, remove, push, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
-        // --- Firebase Config ---
-        // Make sure your Realtime Database rules are set to public for this to work.
-        // { "rules": { ".read": "true", ".write": "true" } }
+        // --- Firebase Config (ใช้ค่าเดิมจากโค้ดที่คุณส่งมา) ---
+        // **ข้อควรจำ: ต้องตั้งค่า Realtime Database Rules ในคอนโซล Firebase ให้เปิดอ่าน/เขียนด้วย**
+        // ตัวอย่างกฎที่ต้องตั้ง: { "rules": { ".read": "true", ".write": "true" } }
         const firebaseConfig = {
             apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
             authDomain: "game-8ede6.firebaseapp.com",
@@ -176,7 +177,7 @@
                 userIdDisplay.textContent = userId;
                 const userRef = ref(db, `users/${userId}`);
                 
-                // Set presence: when connected, set online true. when disconnected, set to false.
+                // ตั้งค่า Presence และ onDisconnect
                 const presenceRef = ref(db, `users/${userId}/online`);
                 onValue(ref(db, '.info/connected'), (snap) => {
                     if (snap.val() === true) {
@@ -185,7 +186,7 @@
                     }
                 });
 
-                // Check if user already has a name from a previous session
+                // ตรวจสอบว่าผู้ใช้มีชื่ออยู่ก่อนหน้าหรือไม่
                 get(userRef).then((snapshot) => {
                     if (snapshot.exists() && snapshot.val().name) {
                         userName = snapshot.val().name;
@@ -193,8 +194,13 @@
                     } else {
                         showScreen('login');
                     }
+                }).catch(error => {
+                    console.error("Error checking existing user data:", error);
+                    // หากมีข้อผิดพลาดในการดึงข้อมูล (เช่น กฎ Firebase ไม่อนุญาต) ให้แสดงหน้า Login
+                    showScreen('login');
                 });
             } else {
+                // หากยังไม่ล็อกอิน ให้ล็อกอินแบบไม่ระบุตัวตน
                 signInAnonymously(auth).catch((error) => console.error("Anonymous sign in failed", error));
             }
         });
@@ -235,20 +241,29 @@
 
         function listenForPlayers() {
             const usersRef = ref(db, 'users');
+            
+            // แสดงสถานะ "กำลังโหลด" ขณะรอข้อมูล
+            playerList.innerHTML = '<li class="text-center text-gray-400">กำลังโหลดรายชื่อผู้เล่น...</li>'; 
+
             onValue(usersRef, (snapshot) => {
                 playerList.innerHTML = '';
                 const users = snapshot.val();
                 let onlineCount = 0;
+                
                 if (users) {
                     Object.keys(users).forEach(uid => {
-                        if (users[uid].online && uid !== userId) {
+                        // เพิ่มการตรวจสอบให้แน่ใจว่าค่า 'online' เป็น boolean true ไม่ใช่แค่มีค่า
+                        if (users[uid].online === true && uid !== userId) { 
                             onlineCount++;
                             const user = users[uid];
                             const li = document.createElement('li');
                             li.className = 'flex justify-between items-center bg-gray-50 p-2 rounded-lg';
                             
+                            const statusText = user.status === 'in-game' ? 'กำลังเล่น' : 'ว่าง';
+                            const statusColor = user.status === 'in-game' ? 'text-yellow-600' : 'text-gray-500';
+
                             const nameSpan = document.createElement('span');
-                            nameSpan.textContent = `${user.name} (${user.status === 'in-game' ? 'กำลังเล่น' : 'ว่าง'})`;
+                            nameSpan.innerHTML = `${user.name} <span class="${statusColor} text-sm">(${statusText})</span>`;
                             li.appendChild(nameSpan);
 
                             if(user.status === 'idle') {
@@ -262,9 +277,15 @@
                         }
                     });
                 }
+                
+                // หากโหลดเสร็จแล้วแต่ไม่มีผู้เล่นอื่นออนไลน์
                 if (onlineCount === 0) {
                     playerList.innerHTML = '<li class="text-center text-gray-400">ไม่มีผู้เล่นอื่นออนไลน์</li>';
                 }
+            }, (error) => {
+                 // **นี่คือส่วนสำคัญ: แสดงข้อผิดพลาดหากการเชื่อมต่อถูกปฏิเสธ**
+                 console.error("Firebase Read Error (Check Rules!):", error);
+                 playerList.innerHTML = '<li class="text-center text-red-500 font-bold">ไม่สามารถโหลดรายชื่อผู้เล่นได้! โปรดตรวจสอบกฎความปลอดภัยของ Firebase</li>';
             });
         }
         
@@ -274,7 +295,16 @@
                 senderName: userName,
                 senderId: userId
             });
-            alert(`ส่งคำเชิญไปที่ ${targetName} แล้ว`);
+            // ใช้วิธีแสดงผลใน UI แทน alert
+            document.getElementById('invitations-list').insertAdjacentHTML('beforebegin', 
+                `<div id="invite-sent" class="bg-blue-100 text-blue-700 p-2 rounded-lg mb-2 transition-opacity duration-300">
+                    ส่งคำเชิญไปที่ ${targetName} แล้ว
+                </div>`
+            );
+            setTimeout(() => {
+                const sentMsg = document.getElementById('invite-sent');
+                if(sentMsg) sentMsg.remove();
+            }, 3000);
         }
 
         function listenForInvitations() {
@@ -306,55 +336,74 @@
             const gameId = push(ref(db, 'games')).key;
             const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
 
-            const gameData = {
-                player1: { id: senderId, name: 'Loading...', choice: null },
-                player2: { id: userId, name: userName, choice: null },
-                currentQuestionIndex: 0,
-                questions: shuffledQuestions,
-                status: 'playing'
-            };
+            // เนื่องจากโค้ดเดิมใช้ get() ซ้ำซ้อนและอาจเกิด race condition, เราจะปรับปรุงการดึงชื่อผู้เล่น
             
             get(ref(db, `users/${senderId}/name`)).then(snapshot => {
-                if(snapshot.exists()) {
-                     gameData.player1.name = snapshot.val();
-                     set(ref(db, `games/${gameId}`), gameData);
-                }
-            });
+                const senderName = snapshot.exists() ? snapshot.val() : 'Player 1';
+                
+                const gameData = {
+                    player1: { id: senderId, name: senderName, choice: null },
+                    player2: { id: userId, name: userName, choice: null },
+                    currentQuestionIndex: 0,
+                    questions: shuffledQuestions,
+                    status: 'playing'
+                };
+                
+                // สร้างเกมและอัปเดตสถานะผู้เล่นพร้อมกัน
+                const updates = {};
+                updates[`games/${gameId}`] = gameData;
+                updates[`users/${userId}/status`] = 'in-game';
+                updates[`users/${userId}/currentGameId`] = gameId;
+                updates[`users/${senderId}/status`] = 'in-game';
+                updates[`users/${senderId}/currentGameId`] = gameId;
+                
+                // ล้างคำเชิญทั้งหมดสำหรับผู้เล่นทั้งสอง
+                updates[`invitations/${userId}`] = null;
+                updates[`invitations/${senderId}`] = null;
 
-            // Update player statuses to trigger game start for both
-            const updates = {};
-            updates[`users/${userId}/status`] = 'in-game';
-            updates[`users/${userId}/currentGameId`] = gameId;
-            updates[`users/${senderId}/status`] = 'in-game';
-            updates[`users/${senderId}/currentGameId`] = gameId;
-            
-            // Clean up all invitations for both players
-            updates[`invitations/${userId}`] = null;
-            updates[`invitations/${senderId}`] = null;
-
-            ref(db).update(updates);
+                ref(db).update(updates).then(() => {
+                     // ไม่ต้องเรียก startGame ตรงนี้ เพราะ onValue(userRef) จะตรวจจับการเปลี่ยนแปลง
+                }).catch(error => console.error("Error accepting invitation and starting game:", error));
+            }).catch(error => console.error("Error getting sender name:", error));
         }
 
         function listenForGameStart(userRef) {
             onValue(userRef, (snapshot) => {
                 const data = snapshot.val();
+                // ตรวจสอบสถานะการเล่นและ gameId เพื่อเริ่มเกม
                 if (data && data.status === 'in-game' && data.currentGameId && currentGameId !== data.currentGameId) {
                     startGame(data.currentGameId);
+                } else if (data && data.status !== 'in-game' && currentGameId) {
+                    // กรณีที่ผู้เล่นอีกคนจบเกมหรือออกไปแล้ว และสถานะของเราถูกเปลี่ยนเป็น 'idle'
+                    cleanUpAfterGame(false); // เรียก cleanup โดยไม่แจ้งเตือน
                 }
             });
         }
 
         // --- Game Logic ---
         function startGame(gameId) {
+            if (gameListener) {
+                gameListener(); // ยกเลิก Listener ของเกมเก่าหากมี
+            }
             currentGameId = gameId;
             showScreen('game');
 
             const gameRef = ref(db, `games/${currentGameId}`);
             gameListener = onValue(gameRef, (snapshot) => {
                 if (!snapshot.exists()) {
-                    if(currentGameId){ // Only show alert if we were actually in a game
-                        alert('เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว');
-                        cleanUpAfterGame();
+                    // ผู้เล่นอีกฝ่ายลบเกมออกไป
+                    if(currentGameId){ 
+                        // ใช้วิธีแสดงผลใน UI แทน alert
+                        document.getElementById('app-container').insertAdjacentHTML('afterbegin', 
+                            `<div id="game-ended" class="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-center font-bold">
+                                เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว
+                            </div>`
+                        );
+                        setTimeout(() => {
+                            const endMsg = document.getElementById('game-ended');
+                            if(endMsg) endMsg.remove();
+                        }, 5000);
+                        cleanUpAfterGame(true); // ทำความสะอาด state
                     }
                     return;
                 }
@@ -426,23 +475,25 @@
         }
 
         function makeChoice(choice) {
-            const playerKey = ref(db, `games/${currentGameId}`).child(userId === get(ref(db, `games/${currentGameId}/player1/id`)) ? 'player1' : 'player2');
             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 const state = snapshot.val();
                 if(state){
                     const playerKey = state.player1.id === userId ? 'player1' : 'player2';
-                    set(ref(db, `games/${currentGameId}/${playerKey}/choice`), choice);
+                    // ใช้ update แทน set เพื่ออัปเดตแค่ choice
+                    ref(db).update({
+                        [`games/${currentGameId}/${playerKey}/choice`]: choice
+                    });
                 }
             });
         }
         
         nextQuestionButton.addEventListener('click', () => {
-             const updates = {};
              get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 const state = snapshot.val();
                 if (!state) return;
                 const nextIndex = state.currentQuestionIndex + 1;
                 
+                const updates = {};
                 if (nextIndex < state.questions.length) {
                     updates[`games/${currentGameId}/currentQuestionIndex`] = nextIndex;
                     updates[`games/${currentGameId}/player1/choice`] = null;
@@ -450,27 +501,37 @@
                 } else {
                     updates[`games/${currentGameId}/status`] = 'finished';
                 }
-                ref(db).update(updates);
+                ref(db).update(updates).catch(error => console.error("Error moving to next question:", error));
              });
         });
 
         endGameButton.addEventListener('click', () => {
+             // ผู้เล่นคนที่กดจบเกม จะเป็นคนจัดการล้างข้อมูล
              get(ref(db, `games/${currentGameId}`)).then(snapshot => {
                 if(snapshot.exists()) {
                     const state = snapshot.val();
                     const updates = {};
+                    
+                    // ตั้งค่าสถานะผู้เล่นกลับเป็น 'idle' และล้าง currentGameId
                     updates[`users/${state.player1.id}/status`] = 'idle';
                     updates[`users/${state.player1.id}/currentGameId`] = null;
                     updates[`users/${state.player2.id}/status`] = 'idle';
                     updates[`users/${state.player2.id}/currentGameId`] = null;
+                    
+                    // ลบเกม
                     updates[`games/${currentGameId}`] = null;
-                    ref(db).update(updates);
+                    
+                    ref(db).update(updates).then(() => {
+                        // การทำความสะอาด state ภายในเครื่องจะเกิดขึ้นใน listenForGameStart หรือ cleanUpAfterGame 
+                        // ขึ้นอยู่กับว่าการอัปเดตข้อมูลถูกส่งไปก่อนหรือไม่
+                    }).catch(error => console.error("Error ending game:", error));
                 }
              });
-             cleanUpAfterGame();
+             cleanUpAfterGame(true);
         });
 
-        function cleanUpAfterGame() {
+        function cleanUpAfterGame(shouldGoToLobby = true) {
+            // ล้างสถานะภายในเครื่อง
             set(ref(db, `users/${userId}/status`), 'idle');
             remove(ref(db, `users/${userId}/currentGameId`));
             
@@ -484,11 +545,10 @@
             optionBButton.classList.remove('hidden');
             endGameButton.classList.add('hidden');
 
-            setupLobby(ref(db, `users/${userId}`));
+            if(shouldGoToLobby) {
+                setupLobby(ref(db, `users/${userId}`));
+            }
         }
     </script>
 </body>
 </html>
-
-
-
