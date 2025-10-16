@@ -85,19 +85,50 @@
         import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, getDocs, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- GLOBAL VARIABLES (Provided by Canvas Environment) ---
+        // >>>>>>>>>>>>>>>>> 1. แก้ไขส่วนนี้สำหรับ GitHub Pages (ถ้าคุณรันเอง) <<<<<<<<<<<<<<<<<
+        // คัดลอก Firebase Config Object (รวมถึงวงเล็บปีกกา {}) ของโปรเจกต์คุณมาวางแทนที่ null ตรงนี้:
+        const USER_FIREBASE_CONFIG = {
+          apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
+          authDomain: "game-8ede6.firebaseapp.com",
+          projectId: "game-8ede6",
+          storageBucket: "game-8ede6.firebasestorage.app",
+          messagingSenderId: "206374174939",
+          appId: "1:206374174939:web:48556411426f53859a4cfe",
+          measurementId: "G-KG84KJ11VC"
+        }; // <<< วาง Firebase Config ของคุณตรงนี้ (ได้ถูกวางแล้ว)
+
+        // --- GLOBAL VARIABLES (Provided by Canvas Environment - DO NOT EDIT) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // ตรวจสอบ Config: ใช้ Config ที่ผู้ใช้กำหนด (ถ้ามี) หรือใช้ Config ที่ระบบ Canvas ให้มา
+        const firebaseConfig = USER_FIREBASE_CONFIG || (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null);
+
+        let app, db, auth;
 
         if (firebaseConfig) {
             setLogLevel('Debug'); // Enable Firestore logging
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            const auth = getAuth(app);
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
             window.db = db;
             window.auth = auth;
+        } else {
+            // Render error message to the user if config is missing
+            document.addEventListener('DOMContentLoaded', () => {
+                document.getElementById('content-area').innerHTML = `
+                    <div class="text-center p-8 bg-red-100 rounded-xl text-red-700 shadow-md">
+                        <p class="font-bold text-2xl mb-3">❌ ข้อผิดพลาดในการตั้งค่า Firebase</p>
+                        <p class="text-lg">กรุณาเพิ่ม Firebase Config ของโปรเจกต์ของคุณลงในตัวแปร <code class="bg-red-200 p-1 rounded font-mono">USER_FIREBASE_CONFIG</code> ในส่วน JavaScript</p>
+                        <p class="mt-4 text-sm text-red-600">การตั้งค่านี้จำเป็นสำหรับการใช้งานฐานข้อมูลแบบหลายผู้เล่น (Multiplayer)</p>
+                    </div>
+                `;
+                document.getElementById('loading').classList.add('hidden');
+            });
+            // Stop initialization
+            console.error("FIREBASE CONFIGURATION MISSING: Please insert your Firebase config into USER_FIREBASE_CONFIG.");
         }
+
 
         // --- FIREBASE PATHS & GAME DATA ---
         const PUBLIC_COLLECTION_USERS = `/artifacts/${appId}/public/data/online_users`;
@@ -385,7 +416,7 @@
 
         async function initAuthAndFirestore() {
             if (!window.db || !window.auth) {
-                showStatus("Error: Firebase configuration is missing or failed to initialize.");
+                // Config is missing and error is already rendered by the check above
                 return;
             }
 
@@ -473,7 +504,7 @@
                     showModal(
                         'คำเชิญเข้าร่วมเกม',
                         `คุณได้รับคำเชิญเข้าร่วมเกมจาก ${inviter}`,
-                        () => handleAcceptInvite(pendingGame.id),
+                        () => handleAcceptInvite(pendingGame.id, inviterId),
                         () => handleDeleteGame(pendingGame.id),
                         'เข้าร่วม',
                         'ปฏิเสธ'
@@ -495,7 +526,7 @@
         }
 
         async function handleSignOut() {
-            if (appState.userId) {
+            if (appState.userId && window.db) {
                 // Set user status to offline before logging out
                 const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
                 try {
@@ -506,7 +537,7 @@
                 sessionStorage.removeItem('userName');
             }
             cleanupListeners();
-            await signOut(window.auth);
+            if(window.auth) await signOut(window.auth);
             // onAuthStateChanged will handle renderLogin
         }
 
@@ -527,6 +558,7 @@
 
         function startOnlineUsersListener() {
             if (appState.unsubscribeOnlineUsers) appState.unsubscribeOnlineUsers();
+            if (!window.db) return;
 
             const usersCollection = collection(window.db, PUBLIC_COLLECTION_USERS);
             const q = query(usersCollection, where('status', 'in', ['online', 'in-game']));
@@ -545,12 +577,13 @@
                     // Received an invite, show modal
                     const inviter = appState.onlineUsers[myUserDoc.pendingInvite.from]?.name || 'ผู้เล่นคนอื่น';
                     const gameId = myUserDoc.pendingInvite.gameId;
+                    const inviterId = myUserDoc.pendingInvite.from;
 
                     showModal(
                         'คำเชิญเข้าร่วมเกม',
                         `คุณได้รับคำเชิญเข้าร่วมเกมจาก ${inviter}`,
-                        () => handleAcceptInvite(gameId, myUserDoc.pendingInvite.from),
-                        () => handleRejectInvite(myUserDoc.pendingInvite.from),
+                        () => handleAcceptInvite(gameId, inviterId),
+                        () => handleRejectInvite(inviterId),
                         'เข้าร่วม',
                         'ปฏิเสธ'
                     );
@@ -569,6 +602,7 @@
 
         function startCurrentGameListener(gameId) {
             if (appState.unsubscribeCurrentGame) appState.unsubscribeCurrentGame();
+            if (!window.db) return;
 
             appState.currentGameId = gameId;
             const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
@@ -577,8 +611,10 @@
                 if (!docSnap.exists() || docSnap.data().status === 'finished') {
                     // Game ended or deleted
                     cleanupListeners();
-                    const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
-                    updateDoc(userRef, { status: 'online' });
+                    if(window.db && appState.userId) {
+                        const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
+                        updateDoc(userRef, { status: 'online' });
+                    }
                     renderLobby();
                     return;
                 }
@@ -664,7 +700,7 @@
                 await updateDoc(gameRef, { status: 'waiting_for_choices' });
 
                 // 2. Update both players' status to in-game
-                await updateDoc(userRef, { status: 'in-game' });
+                await updateDoc(userRef, { status: 'in-game', pendingInvite: null });
                 await updateDoc(inviterUserRef, { status: 'in-game' });
 
                 // 3. Start listening to the game
@@ -680,7 +716,7 @@
 
         async function handleRejectInvite(inviterId) {
             try {
-                // Remove pending invite from self (already done in listener, but safer to re-run)
+                // Remove pending invite from self
                 await updateDoc(doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId), { pendingInvite: null });
                 showStatus("ปฏิเสธคำเชิญแล้ว");
             } catch (e) {
@@ -691,7 +727,7 @@
 
         async function handleMakeChoice(event) {
             const choice = event.currentTarget.dataset.choice;
-            if (!appState.currentGameId) return;
+            if (!appState.currentGameId || !window.db) return;
 
             // Disable buttons immediately for feedback
             $$('.choice-btn').forEach(btn => {
@@ -761,7 +797,7 @@
 
         async function handleNextQuestion() {
             const { currentGameId, currentGame, userId } = appState;
-            if (!currentGameId || currentGame.status !== 'revealed') return;
+            if (!currentGameId || currentGame.status !== 'revealed' || !window.db) return;
 
             const nextIndex = currentGame.currentQuestionIndex + 1;
 
@@ -792,6 +828,8 @@
         }
 
         async function handleReturnToLobby(gameId) {
+            if (!window.db || !appState.userId) return;
+
             // Delete the game and reset user status
             try {
                 const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
@@ -808,6 +846,7 @@
         }
 
         async function handleDeleteGame(gameId) {
+            if (!window.db) return;
             // Used for rejecting an invite (deletes the pending game)
             try {
                 const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
