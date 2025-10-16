@@ -38,7 +38,7 @@
         <div id="global-message" class="hidden p-3 rounded-lg font-medium text-center transition-all duration-300"></div>
 
         <!-- --- VIEW 1: Nickname Input --- -->
-        <div id="nickname-view" class="space-y-4">
+        <div id="nickname-view" class="hidden space-y-4">
             <h2 class="text-2xl font-bold text-gray-700">1. เข้าสู่ระบบ</h2>
             <input type="text" id="nickname-input" placeholder="ใส่ชื่อเล่นของคุณ (เช่น: น้องแมว)" maxlength="15" 
                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-lg">
@@ -139,6 +139,7 @@
         let appId = 'default-app-id-fallback';
         let isConfigValid = false; // Flag เพื่อตรวจสอบความสำเร็จในการโหลด Config
 
+        // พยายามดึงและ Parse Config ใน Global Scope
         try {
             // 1. Access App ID (string) - ตรวจสอบว่าไม่เป็น undefined และไม่เป็นค่าว่าง
             appId = typeof __app_id !== 'undefined' && __app_id !== '' ? __app_id : 'default-app-id-fallback';
@@ -151,17 +152,18 @@
                 firebaseConfig = JSON.parse(firebaseConfigJson);
                 isConfigValid = true; // ตั้งค่า Flag เมื่อ Parse สำเร็จ
             } else {
-                throw new Error("Firebase config variable is empty.");
+                // ถ้าค่าว่างหรือ undefined จะโยน Error ไปเข้า Catch
+                throw new Error("Firebase config variable is empty or not provided by environment.");
             }
 
         } catch (e) {
             console.error("FATAL: Error accessing or parsing global Firebase configs:", e);
             
-            // แสดงข้อความผิดพลาดทันทีหากการดึงค่าล้มเหลว
+            // แสดงข้อความผิดพลาดบนหน้าจอโดยตรง (แทนการพึ่งพา F12)
             const userStatusDisplayEl = document.getElementById('user-status-display');
             userStatusDisplayEl.textContent = 'สถานะ: ข้อผิดพลาดการตั้งค่า';
             const globalMessageEl = document.getElementById('global-message');
-            globalMessageEl.textContent = 'ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase (โค้ดล้มเหลวในการอ่าน Config)';
+            globalMessageEl.textContent = 'ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase (โปรดลองรีโหลด Immersive)';
             
             globalMessageEl.className = 'p-3 rounded-lg font-medium text-center transition-all duration-300 bg-red-100 text-red-800 border border-red-300';
             globalMessageEl.classList.remove('hidden');
@@ -198,7 +200,7 @@
             ["หนังตลก", "หนังแอคชั่น"]
         ];
 
-        // --- DOM Elements (ไม่ได้เปลี่ยนแปลง) ---
+        // --- DOM Elements ---
         const userStatusDisplayEl = document.getElementById('user-status-display');
         const globalMessageEl = document.getElementById('global-message');
         const nicknameViewEl = document.getElementById('nickname-view');
@@ -223,7 +225,7 @@
         const finalScoreMessageEl = document.getElementById('final-score-message');
         const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
 
-        // --- Utility Functions (ไม่ได้เปลี่ยนแปลง) ---
+        // --- Utility Functions ---
 
         function showGlobalMessage(msg, type = 'info') {
             globalMessageEl.textContent = msg;
@@ -282,7 +284,7 @@
         // --- Firestore Reference Functions (ใช้ appId ที่ดึงมาอย่างถูกต้อง) ---
 
         function getPublicDocRef(collectionName, docId) {
-            // พาธที่ใช้ในการสร้างเกม: artifacts/{appId}/public/data/[collectionName]/[docId]
+            // Path: artifacts/{appId}/public/data/[collectionName]/[docId]
             return doc(db, 
                 'artifacts', appId, 
                 'public', 'data', 
@@ -761,7 +763,7 @@
             setView('game-over');
         }
 
-        // --- Event Listeners Setup (ไม่ได้เปลี่ยนแปลง) ---
+        // --- Event Listeners Setup ---
 
         joinBtn.addEventListener('click', async () => {
             if (!isAuthReady) {
@@ -777,7 +779,6 @@
             nickname = inputNickname;
             
             // ** WRITE OPERATION #1: Update presence **
-            // We call this first to ensure the basic public path access works.
             updatePlayerStatus('Online'); 
 
             setView('lobby');
@@ -820,7 +821,6 @@
         async function initFirebase() {
             // ใช้ isConfigValid ที่ตั้งค่าไว้จาก try...catch ด้านบน
             if (!isConfigValid) {
-                 console.error("Firebase Config is marked invalid. Cannot initialize.");
                  return; // ออกจากฟังก์ชันเพราะ Config ไม่ถูกต้อง
             }
 
@@ -836,7 +836,6 @@
 
                 // ** LOG ที่สำคัญ **
                 console.log("Firebase Auth SUCCESS. User ID:", userId);
-                console.log("App ID used for paths:", appId);
                 userStatusDisplayEl.textContent = `สถานะ: พร้อม (UserID: ${userId.substring(0, 8)}...)`;
                 
                 // ลบสถานะออนไลน์เก่าออก 
