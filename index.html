@@ -177,26 +177,17 @@
                 userIdDisplay.textContent = userId;
                 const userRef = ref(db, `users/${userId}`);
                 
-                // ตั้งค่า Presence และ onDisconnect
-                const presenceRef = ref(db, `users/${userId}/online`);
-                onValue(ref(db, '.info/connected'), (snap) => {
-                    if (snap.val() === true) {
-                        set(presenceRef, true);
-                        onDisconnect(userRef).update({ online: false, status: 'offline' });
-                    }
-                });
-
                 // ตรวจสอบว่าผู้ใช้มีชื่ออยู่ก่อนหน้าหรือไม่
                 get(userRef).then((snapshot) => {
                     if (snapshot.exists() && snapshot.val().name) {
-                        userName = snapshot.val().name;
-                        setupLobby(userRef);
+                        // ผู้ใช้กลับมา (Returning user)
+                        completeLoginAndSetup(snapshot.val().name, userRef);
                     } else {
+                        // ผู้ใช้ใหม่หรือยังไม่เคยตั้งชื่อ
                         showScreen('login');
                     }
                 }).catch(error => {
                     console.error("Error checking existing user data:", error);
-                    // หากมีข้อผิดพลาดในการดึงข้อมูล (เช่น กฎ Firebase ไม่อนุญาต) ให้แสดงหน้า Login
                     showScreen('login');
                 });
             } else {
@@ -204,6 +195,35 @@
                 signInAnonymously(auth).catch((error) => console.error("Anonymous sign in failed", error));
             }
         });
+        
+        /**
+         * FIX: ฟังก์ชันนี้รับรองว่าข้อมูลผู้ใช้ถูกเขียนลง DB อย่างครบถ้วน
+         * (ชื่อ, online: true, status: 'idle') ก่อนจะเริ่ม Lobby listeners
+         */
+        function completeLoginAndSetup(name, userRef) {
+            userName = name;
+            
+            // 1. เขียนข้อมูลผู้ใช้ปัจจุบันลง DB เพื่อให้มั่นใจว่า online: true และ status: 'idle'
+            set(userRef, {
+                name: userName,
+                online: true,
+                status: 'idle'
+            });
+
+            // 2. ตั้งค่า Presence (On Disconnect)
+            onValue(ref(db, '.info/connected'), (snap) => {
+                if (snap.val() === true) {
+                    // อัปเดตสถานะออนไลน์เมื่อเชื่อมต่อ
+                    set(ref(db, `users/${userId}/online`), true); 
+                    // ตั้งค่า onDisconnect
+                    onDisconnect(userRef).update({ online: false, status: 'offline' });
+                }
+            });
+
+            // 3. เริ่ม Lobby
+            setupLobby(userRef);
+        }
+
 
         // --- UI Control ---
         function showScreen(screenName) {
@@ -217,14 +237,9 @@
         loginButton.addEventListener('click', () => {
             const name = nameInput.value.trim();
             if (name) {
-                userName = name;
                 const userRef = ref(db, `users/${userId}`);
-                set(userRef, {
-                    name: userName,
-                    online: true,
-                    status: 'idle'
-                });
-                setupLobby(userRef);
+                completeLoginAndSetup(name, userRef); // ใช้ฟังก์ชันรวมที่แก้ไขแล้ว
+                loginError.classList.add('hidden');
             } else {
                 loginError.classList.remove('hidden');
             }
@@ -252,7 +267,9 @@
                 
                 if (users) {
                     Object.keys(users).forEach(uid => {
-                        // เพิ่มการตรวจสอบให้แน่ใจว่าค่า 'online' เป็น boolean true ไม่ใช่แค่มีค่า
+                        // **นี่คือเงื่อนไขที่ผู้เล่นจะแสดง:**
+                        // 1. ต้อง online: true 
+                        // 2. ต้องไม่ใช่ผู้เล่นปัจจุบัน (uid !== userId)
                         if (users[uid].online === true && uid !== userId) { 
                             onlineCount++;
                             const user = users[uid];
@@ -283,7 +300,7 @@
                     playerList.innerHTML = '<li class="text-center text-gray-400">ไม่มีผู้เล่นอื่นออนไลน์</li>';
                 }
             }, (error) => {
-                 // **นี่คือส่วนสำคัญ: แสดงข้อผิดพลาดหากการเชื่อมต่อถูกปฏิเสธ**
+                 // แสดงข้อความใน UI และ Console หากการเชื่อมต่อมีปัญหา
                  console.error("Firebase Read Error (Check Rules!):", error);
                  playerList.innerHTML = '<li class="text-center text-red-500 font-bold">ไม่สามารถโหลดรายชื่อผู้เล่นได้! โปรดตรวจสอบกฎความปลอดภัยของ Firebase</li>';
             });
@@ -336,8 +353,6 @@
             const gameId = push(ref(db, 'games')).key;
             const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
 
-            // เนื่องจากโค้ดเดิมใช้ get() ซ้ำซ้อนและอาจเกิด race condition, เราจะปรับปรุงการดึงชื่อผู้เล่น
-            
             get(ref(db, `users/${senderId}/name`)).then(snapshot => {
                 const senderName = snapshot.exists() ? snapshot.val() : 'Player 1';
                 
@@ -361,9 +376,7 @@
                 updates[`invitations/${userId}`] = null;
                 updates[`invitations/${senderId}`] = null;
 
-                ref(db).update(updates).then(() => {
-                     // ไม่ต้องเรียก startGame ตรงนี้ เพราะ onValue(userRef) จะตรวจจับการเปลี่ยนแปลง
-                }).catch(error => console.error("Error accepting invitation and starting game:", error));
+                ref(db).update(updates).catch(error => console.error("Error accepting invitation and starting game:", error));
             }).catch(error => console.error("Error getting sender name:", error));
         }
 
