@@ -130,19 +130,21 @@
     <!-- Firebase Imports and Game Script -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // เปลี่ยนจาก setDoc เป็นใช้ addDoc (เพิ่มการ import)
         import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- ส่วนที่ 1: การตั้งค่า Firebase (นำค่าที่คุณให้มาใส่เรียบร้อยแล้ว) ---
+        // เพิ่ม "storageBucket" เพื่อให้ Config สมบูรณ์ที่สุดตามโครงสร้างของ Canvas
         const USER_FIREBASE_CONFIG = {
             apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
             authDomain: "game-8ede6.firebaseapp.com",
             projectId: "game-8ede6",
-            storageBucket: "game-8ede6.firebasestorage.app",
+            storageBucket: "game-8ede6.appspot.com", // แก้เป็น .appspot.com ตามรูปแบบมาตรฐาน
             messagingSenderId: "206374174939",
             appId: "1:206374174939:web:48556411426f53859a4cfe",
-            measurementId: "G-KG84KJ11VC" // ไม่ได้ใช้งานแต่ใส่ไว้เพื่อความสมบูรณ์
+            // measurementId: "G-KG84KJ11VC"
         };
         
         // ใช้ ID นี้สำหรับ Isolation Path ใน Firestore เพื่อไม่ให้ข้อมูลปนกับแอปอื่น
@@ -307,10 +309,8 @@
                 totalQuestions = questionPairs.length;
                 
                 // 2. Create the game document
-                const gameDocRef = doc(getPublicCollectionRef('games'));
-                currentGameId = gameDocRef.id;
-                isHost = true;
-
+                const gameCollectionRef = getPublicCollectionRef('games'); // ใช้ Collection Reference
+                
                 const gameData = {
                     status: 'WAITING_FOR_INVITE',
                     hostId: userId,
@@ -325,9 +325,12 @@
                     lastActionTime: serverTimestamp()
                 };
 
-                // ***** การเขียนข้อมูลที่อาจล้มเหลว *****
-                await setDoc(gameDocRef, gameData);
-                // **********************************
+                // ***** การเขียนข้อมูลที่อาจล้มเหลว: เปลี่ยนจาก setDoc(doc(...)) เป็น addDoc(collection(...)) *****
+                const newGameDoc = await addDoc(gameCollectionRef, gameData);
+                currentGameId = newGameDoc.id;
+                // *********************************************************************************************
+
+                isHost = true;
                 
                 showGlobalMessage(`เชิญ ${opponentNickname} แล้ว! กำลังรอการตอบรับ...`, 'warning');
                 
@@ -347,6 +350,9 @@
                         errorMsg += " (ปัญหา: Security Rules ไม่อนุญาตให้เขียน)";
                     } else if (error.code === 'unauthenticated') {
                         errorMsg += " (ปัญหา: ผู้ใช้ไม่ได้ลงชื่อเข้าใช้)";
+                    } else if (error.code === 'invalid-argument') {
+                        // เพิ่มคำแนะนำสำหรับการ Debug
+                        errorMsg += " (ปัญหา: ข้อมูลผิดรูปแบบหรือ Config ไม่สมบูรณ์)";
                     }
                 } else {
                     errorMsg += " (โปรดตรวจสอบ Console)";
