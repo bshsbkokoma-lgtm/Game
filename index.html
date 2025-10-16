@@ -171,12 +171,23 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, arrayRemove, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global variables provided by the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // === CONFIGURATION PROVIDED BY THE USER ===
+        const firebaseConfig = {
+          apiKey: "AIzaSyAX4aPF1qDhGdVj5U6A2cIY64tar8ZGEIw",
+          authDomain: "tort-63921.firebaseapp.com",
+          projectId: "tort-63921",
+          storageBucket: "tort-63921.firebasestorage.app",
+          messagingSenderId: "1044890962097",
+          appId: "1:1044890962097:web:b9c9a09733467408bdfa90",
+          measurementId: "G-39517NH5QN"
+        };
+        // === END CONFIGURATION ===
+
+        // Extracting required variables for the game logic
+        const appId = firebaseConfig.appId;
+        const initialAuthToken = null; // We use Anonymous sign-in for public web apps
 
         let app;
         let db;
@@ -294,6 +305,7 @@
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
+                    // Sign in anonymously for public web deployment
                     await signInAnonymously(auth);
                 }
 
@@ -505,7 +517,7 @@
             const myPlayer = playerMap[userId] || {};
 
             // 1. Update Room Info
-            document.getElementById('room-id-display').textContent = room.hostName ? room.hostName : roomSnapshotUnsubscribe.id.substring(0, 4);
+            document.getElementById('room-id-display').textContent = room.hostName ? room.hostName : currentRoomId.substring(0, 4);
             document.getElementById('current-round').textContent = `รอบที่: ${room.questionIndex} / ${MAX_ROUNDS}`;
 
             // 2. Update Player Scores/Names
@@ -651,13 +663,16 @@
             // 1. Calculate Score (only if coming from REVEAL or WAITING to first round)
             if (room.status === 'REVEAL') {
                 const pIds = Object.keys(newPlayers);
-                const p1Choice = newPlayers[pIds[0]].choice;
-                const p2Choice = newPlayers[pIds[1]].choice;
+                // Ensure we have two players to calculate scores
+                if (pIds.length === MAX_PLAYERS) {
+                    const p1Choice = newPlayers[pIds[0]].choice;
+                    const p2Choice = newPlayers[pIds[1]].choice;
 
-                if (p1Choice === p2Choice) {
-                    // Match! Both get a point
-                    newPlayers[pIds[0]].score += 1;
-                    newPlayers[pIds[1]].score += 1;
+                    if (p1Choice === p2Choice) {
+                        // Match! Both get a point
+                        newPlayers[pIds[0]].score += 1;
+                        newPlayers[pIds[1]].score += 1;
+                    }
                 }
 
                 newIndex += 1; // Advance round index
@@ -778,7 +793,6 @@
         initFirebase();
 
         // Must define deleteField function from Firestore SDK to use it
-        // The import { deleteDoc } is already there, but we need the field delete constant
         const deleteField = {
             firestore: {
                 delete: true
