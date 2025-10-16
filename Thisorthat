@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกม This or That | เลือกอะไรดี</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font for better display -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+Thai:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Noto Sans Thai', 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <div id="game-container" class="w-full max-w-lg bg-white shadow-2xl rounded-xl p-6 md:p-8 space-y-6">
+        
+        <!-- Header and Scores -->
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl font-extrabold text-blue-600">
+                เลือกอะไรดี?
+            </h1>
+            <p class="text-lg text-gray-500">
+                เกม This or That
+            </p>
+            <div class="flex justify-between items-center pt-4 border-t border-gray-100 mt-4">
+                <div class="text-left">
+                    <p class="text-sm font-medium text-gray-400">คะแนนปัจจุบัน</p>
+                    <p id="current-score" class="text-3xl font-bold text-green-500">0</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm font-medium text-gray-400">คะแนนสูงสุด</p>
+                    <p id="high-score" class="text-3xl font-bold text-red-500">0</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Loading/Message Area -->
+        <div id="message-box" class="min-h-[6rem] flex items-center justify-center bg-yellow-50 text-yellow-800 p-4 rounded-lg border border-yellow-200">
+            <p id="loading-message" class="font-semibold">กำลังโหลดเกม...</p>
+        </div>
+
+        <!-- Choice Buttons -->
+        <div id="choice-area" class="grid grid-cols-1 gap-4 opacity-0 transition-opacity duration-500">
+            <button id="choice-a-btn" class="choice-btn w-full bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold py-5 px-4 rounded-xl text-2xl shadow-lg transition transform hover:scale-[1.02] active:scale-[0.98]">
+                Choice A
+            </button>
+            <div class="text-center text-3xl font-black text-gray-400 py-2">
+                หรือ
+            </div>
+            <button id="choice-b-btn" class="choice-btn w-full bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold py-5 px-4 rounded-xl text-2xl shadow-lg transition transform hover:scale-[1.02] active:scale-[0.98]">
+                Choice B
+            </button>
+        </div>
+        
+        <!-- Hidden Modal for Game Over -->
+        <div id="modal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl p-8 max-w-sm w-full text-center space-y-4 shadow-2xl">
+                <h3 id="modal-title" class="text-3xl font-bold text-red-600">จบเกม!</h3>
+                <p id="modal-message" class="text-xl text-gray-700">คุณทำได้คะแนน 5!</p>
+                <button id="restart-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg text-lg transition duration-200">
+                    เล่นอีกครั้ง
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Imports and Game Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // ** Global Variables provided by the Canvas environment (MUST BE USED) **
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Game State Variables
+        let db = null;
+        let auth = null;
+        let userId = null;
+        let currentScore = 0;
+        let highScore = 0;
+        let currentChoices = []; // The current pair of choices being displayed
+        let isGameActive = false;
+        
+        // Set Firestore debug log level
+        if (typeof setLogLevel === 'function') {
+            setLogLevel('debug');
+        }
+
+        // --- Data: List of Thai "This or That" Choices ---
+        // Each array contains [Choice A, Choice B]
+        const choicePairs = [
+            ["แมว", "หมา"],
+            ["กาแฟ", "ชา"],
+            ["ทะเล", "ภูเขา"],
+            ["ดูหนัง", "อ่านหนังสือ"],
+            ["ฤดูร้อน", "ฤดูหนาว"],
+            ["เดินทางคนเดียว", "เดินทางกับเพื่อน"],
+            ["โทรศัพท์", "คอมพิวเตอร์"],
+            ["อาหารคาว", "อาหารหวาน"],
+            ["เพลงเร็ว", "เพลงช้า"],
+            ["ตื่นเช้า", "นอนดึก"],
+            ["เงิน", "ชื่อเสียง"],
+            ["อดีต", "อนาคต"],
+            ["ชีวิตในเมือง", "ชีวิตในชนบท"],
+            ["การ์ตูน", "สารคดี"],
+            ["ฝนตก", "แดดออก"]
+        ];
+
+        // --- DOM Elements ---
+        const currentScoreEl = document.getElementById('current-score');
+        const highScoreEl = document.getElementById('high-score');
+        const choiceABtn = document.getElementById('choice-a-btn');
+        const choiceBBtn = document.getElementById('choice-b-btn');
+        const choiceArea = document.getElementById('choice-area');
+        const loadingMessageEl = document.getElementById('loading-message');
+        const messageBoxEl = document.getElementById('message-box');
+        const modalEl = document.getElementById('modal');
+        const modalTitleEl = document.getElementById('modal-title');
+        const modalMessageEl = document.getElementById('modal-message');
+        const restartBtn = document.getElementById('restart-btn');
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts base64 to ArrayBuffer for audio processing.
+         * Note: Not used here but a common utility for audio APIs.
+         */
+        function base64ToArrayBuffer(base64) {
+            const binary_string = window.atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // --- Firestore Functions ---
+
+        function getHighScoreDocRef() {
+            // Path: /artifacts/{appId}/users/{userId}/thisOrThatHighScores/highScoreDoc
+            return doc(db, 
+                'artifacts', appId, 
+                'users', userId, 
+                'thisOrThatHighScores', 
+                'highScoreDoc'
+            );
+        }
+
+        async function loadHighScore() {
+            if (!db || !userId) return;
+
+            try {
+                const docRef = getHighScoreDocRef();
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    highScore = docSnap.data().score || 0;
+                } else {
+                    highScore = 0;
+                    // Create the document if it doesn't exist
+                    await setDoc(docRef, { score: 0 });
+                }
+                highScoreEl.textContent = highScore;
+            } catch (error) {
+                console.error("Error loading high score:", error);
+                // Fallback to 0 if Firestore fails
+                highScore = 0; 
+                highScoreEl.textContent = 'N/A';
+                showMessage('เกิดข้อผิดพลาดในการโหลดคะแนนสูงสุด', 'red');
+            }
+        }
+
+        async function updateHighScore(newScore) {
+            if (!db || !userId) return;
+
+            if (newScore > highScore) {
+                highScore = newScore;
+                highScoreEl.textContent = highScore;
+
+                try {
+                    const docRef = getHighScoreDocRef();
+                    // Use setDoc with merge: true to ensure it only updates the score field
+                    await setDoc(docRef, { score: newScore, updatedAt: new Date().toISOString() }, { merge: true });
+                    console.log("High score updated successfully.");
+                } catch (error) {
+                    console.error("Error updating high score:", error);
+                    showMessage('คะแนนสูงสุดบันทึกไม่สำเร็จ', 'yellow');
+                }
+            }
+        }
+
+        // --- Game Logic Functions ---
+        
+        function showMessage(msg, type = 'info') {
+            messageBoxEl.textContent = msg;
+            messageBoxEl.className = 'min-h-[6rem] flex items-center justify-center p-4 rounded-lg border font-semibold';
+            
+            if (type === 'success') {
+                messageBoxEl.classList.add('bg-green-50', 'text-green-800', 'border-green-200');
+            } else if (type === 'error') {
+                messageBoxEl.classList.add('bg-red-50', 'text-red-800', 'border-red-200');
+            } else if (type === 'warning') {
+                messageBoxEl.classList.add('bg-yellow-50', 'text-yellow-800', 'border-yellow-200');
+            } else { // info/default
+                messageBoxEl.classList.add('bg-blue-50', 'text-blue-800', 'border-blue-200');
+            }
+        }
+
+        function displayNextChoices() {
+            // Check if all choices have been used or if the array is empty
+            if (choicePairs.length === 0) {
+                showMessage("จบชุดคำถามแล้ว! คุณสุดยอดมาก!");
+                endGame(true);
+                return;
+            }
+
+            // 1. Select a random pair
+            const randomIndex = Math.floor(Math.random() * choicePairs.length);
+            currentChoices = choicePairs.splice(randomIndex, 1)[0]; // Remove and get the pair
+            
+            // 2. Randomly assign A and B to button positions to prevent bias
+            const isFlipped = Math.random() < 0.5;
+            
+            const choiceA = isFlipped ? currentChoices[1] : currentChoices[0];
+            const choiceB = isFlipped ? currentChoices[0] : currentChoices[1];
+            
+            // 3. Update buttons and message
+            choiceABtn.textContent = choiceA;
+            choiceBBtn.textContent = choiceB;
+            showMessage(`คุณเลือก ${choiceA} หรือ ${choiceB} ?`, 'info');
+
+            // 4. Ensure choice area is visible
+            if (choiceArea.classList.contains('opacity-0')) {
+                choiceArea.classList.remove('opacity-0');
+            }
+        }
+
+        function handleChoice(chosenIndex) {
+            if (!isGameActive) return;
+
+            // In a standard "This or That", there is no correct answer, so the game continues 
+            // until the user stops or runs out of options. Here, we just increment the score.
+            currentScore++;
+            currentScoreEl.textContent = currentScore;
+            
+            // Give immediate feedback
+            const chosenText = chosenIndex === 0 ? choiceABtn.textContent : choiceBBtn.textContent;
+            showMessage(`คุณเลือก: ${chosenText}! ไปคำถามต่อไป...`, 'success');
+            
+            // Wait briefly before loading the next question
+            setTimeout(() => {
+                displayNextChoices();
+            }, 500);
+        }
+
+        function startGame() {
+            currentScore = 0;
+            currentScoreEl.textContent = currentScore;
+            isGameActive = true;
+            modalEl.classList.add('hidden');
+            
+            // Clone the original array to reset the question pool (if needed for replay)
+            if (choicePairs.length === 0) {
+                 // In a real app, you'd reset the array of pairs here if they were depleted.
+                 // For now, let's assume the pool is big enough or the app will be reloaded.
+                 // Since we are splcing, a full reset would require reloading the page or defining a copy.
+            }
+            
+            displayNextChoices();
+        }
+
+        function endGame(isFinished = false) {
+            isGameActive = false;
+            updateHighScore(currentScore); // Try to save high score
+
+            if (isFinished) {
+                 modalTitleEl.textContent = 'คำถามหมดแล้ว! เยี่ยมมาก!';
+                 modalMessageEl.textContent = `คุณตอบครบทุกคำถาม ทำได้คะแนน ${currentScore} แต้ม!`;
+            } else {
+                 modalTitleEl.textContent = 'จบเกม!';
+                 modalMessageEl.textContent = `คุณทำได้คะแนน ${currentScore} แต้ม!`;
+            }
+            modalEl.classList.remove('hidden');
+        }
+
+        // --- Event Listeners ---
+        choiceABtn.addEventListener('click', () => handleChoice(0)); // 0 for Choice A
+        choiceBBtn.addEventListener('click', () => handleChoice(1)); // 1 for Choice B
+        restartBtn.addEventListener('click', startGame);
+
+        // --- Initialization ---
+
+        async function initFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing.");
+                showMessage('ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase', 'error');
+                return;
+            }
+
+            try {
+                // Initialize services
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Sign in
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    userId = auth.currentUser.uid;
+                    console.log("Signed in with custom token. User ID:", userId);
+                } else {
+                    const userCredential = await signInAnonymously(auth);
+                    userId = userCredential.user.uid;
+                    console.log("Signed in anonymously. User ID:", userId);
+                }
+
+                // Load data and start game
+                await loadHighScore();
+                showMessage('พร้อมเล่นแล้ว! กดปุ่มเพื่อเริ่ม', 'info');
+                startGame(); // Automatically start the first round
+                
+            } catch (error) {
+                console.error("Firebase initialization or auth failed:", error);
+                showMessage('ข้อผิดพลาดในการเชื่อมต่อ: กรุณาลองใหม่', 'error');
+            }
+        }
+
+        // Start initialization when the window loads
+        window.addEventListener('load', initFirebase);
+
+    </script>
+
+</body>
+</html>
