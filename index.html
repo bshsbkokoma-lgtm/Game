@@ -93,7 +93,15 @@
     <div class="container-wrapper flex flex-col items-center">
         <header class="text-center my-6">
             <h1 class="text-4xl font-extrabold text-gray-900 leading-tight">เลือก หรือ เลือก (This or That)</h1>
-            <p id="player-status" class="text-sm mt-1 text-gray-500">รอการเชื่อมต่อ...</p>
+            
+            <!-- NEW: Sign Out Button and Status in a flex container -->
+            <div class="flex items-center justify-center mt-1 space-x-3">
+                <p id="player-status" class="text-sm text-gray-500">รอการเชื่อมต่อ...</p>
+                <button id="sign-out-btn" class="hidden text-xs px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition duration-150">
+                    ออกจากระบบ
+                </button>
+            </div>
+            
         </header>
 
         <!-- Main Content Area -->
@@ -131,7 +139,7 @@
             <!-- Screen 3: Game Play & Status -->
             <div id="screen-game" class="game-card hidden space-y-6">
 
-                <!-- NEW: User ID Display (Copyable) -->
+                <!-- User ID Display (Copyable) -->
                 <div class="flex flex-col sm:flex-row justify-between items-center text-sm bg-gray-50 p-3 rounded-xl border border-gray-200">
                     <p class="font-semibold text-gray-700 mb-2 sm:mb-0">User ID (สำหรับอ้างอิง):</p>
                     <div class="flex items-center w-full sm:w-auto">
@@ -171,18 +179,16 @@
                     </p>
 
                     <div id="choice-buttons-wrapper" class="grid grid-cols-2 gap-4">
-                        <button id="choice-1-btn" class="choice-button placeholder" disabled>ยังไม่เริ่ม</button>
-                        <button id="choice-2-btn" class="choice-button placeholder" disabled>ยังไม่เริ่ม</button>
+                        <button id="choice-1-btn" class="choice-button placeholder" disabled>รอเริ่มเกม...</button>
+                        <button id="choice-2-btn" class="choice-button placeholder" disabled>รอเริ่มเกม...</button>
                     </div>
 
                     <!-- Next Round Button (Host only) -->
                     <div class="text-center pt-4">
-                        <button id="next-round-btn" class="btn-primary hidden" disabled>
+                        <button id="next-round-btn" class="btn-primary hidden">
                             คำถามต่อไป (โฮสต์เท่านั้น)
                         </button>
-                        <p id="countdown-timer" class="text-sm font-medium text-red-500 mt-2 hidden">
-                            รอ 10 วินาที...
-                        </p>
+                        <!-- Countdown timer removed as requested -->
                     </div>
                 </div>
 
@@ -193,13 +199,12 @@
     <!-- Firebase Scripts (Must be type="module") -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // Optional: Uncomment for debugging
 
         // === CONFIGURATION PROVIDED BY THE USER (Using a placeholder config) ===
-        // NOTE: In a real environment, __firebase_config and __app_id would be available.
         const firebaseConfig = {
           apiKey: "AIzaSyAX4aPF1qDhGdVj5U6A2cIY64tar8ZGEIw",
           authDomain: "tort-63921.firebaseapp.com",
@@ -216,6 +221,9 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const finalFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
 
+        // === Admin User ID for room deletion ===
+        const ADMIN_USER_ID = '4mrVsIXjhEX6GgJwZ6sIbieNOiC2';
+
         let app;
         let db;
         let auth;
@@ -224,12 +232,11 @@
         let currentRoomId = null;
         let roomSnapshotUnsubscribe = null;
         let roomsListUnsubscribe = null;
-        let countdownTimer = null; // To hold the countdown interval
 
         // --- Game Data ---
         const MAX_PLAYERS = 2;
         const MAX_ROUNDS = 10;
-        const REVEAL_DURATION_SECONDS = 10;
+        
         const ALL_QUESTIONS = [
             { t: 'แมว', h: 'หมา' }, // Cat or Dog
             { t: 'กาแฟ', h: 'ชา' }, // Coffee or Tea
@@ -246,26 +253,6 @@
             { t: 'เดินทาง', h: 'อยู่บ้าน' }, // Travel or Stay home
             { t: 'อ่านหนังสือ', h: 'ฟังเพลง' } // Read book or Listen to music
         ];
-
-        // Helper function for exponential backoff retry (for API calls)
-        async function retryFetch(url, options, maxRetries = 5) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (i === maxRetries - 1) {
-                        console.error('Fetch failed after multiple retries:', error);
-                        throw error;
-                    }
-                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-        }
 
         // --- Utility Functions ---
 
@@ -316,7 +303,59 @@
             `;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
         }
-        
+
+        // --- Detailed Game Summary Modal ---
+        function showGameOverSummary(room, p1, p2) {
+            // Determine winner message
+            const winnerMessage = p1.score > p2.score ? `${p1.name} ชนะ!` :
+                                  p2.score > p1.score ? `${p2.name} ชนะ!` :
+                                  'เสมอกัน!';
+
+            const summaryHtml = room.history.map(entry => {
+                const p1Chose = entry.p1Choice === 't' ? entry.question.t : entry.question.h;
+                const p2Chose = entry.p2Choice === 't' ? entry.question.t : entry.question.h;
+                const matchText = entry.match ?
+                    `<span class="text-green-600 font-bold">เหมือนกัน! (+1 คะแนน)</span>` :
+                    `<span class="text-red-600 font-bold">แตกต่างกัน</span>`;
+
+                return `
+                    <div class="p-3 border-b border-gray-100 last:border-b-0">
+                        <p class="text-base font-semibold text-indigo-700">รอบที่ ${entry.round}: ${entry.question.t} หรือ ${entry.question.h}</p>
+                        <div class="flex justify-between text-sm mt-1">
+                            <p class="w-1/2 truncate pr-2"><span class="font-medium">${entry.p1Name}:</span> ${p1Chose}</p>
+                            <p class="w-1/2 truncate pl-2"><span class="font-medium">${entry.p2Name}:</span> ${p2Chose}</p>
+                        </div>
+                        <p class="text-center text-xs mt-2">${matchText}</p>
+                    </div>
+                `;
+            }).join('');
+
+
+            // Create a detailed overlay modal
+            const existingModal = document.getElementById('app-modal');
+            if (existingModal) existingModal.remove();
+
+            const modalHtml = `
+                <div id="app-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full text-center max-h-[90vh] flex flex-col">
+                        <h3 class="text-2xl font-extrabold text-primary-color mb-2">เกมจบแล้ว!</h3>
+                        <p class="text-xl font-bold text-gray-800 mb-4">${winnerMessage} (${p1.score} - ${p2.score})</p>
+
+                        <h4 class="text-lg font-semibold text-gray-700 mb-3 border-t pt-3">สรุปผลการเลือกแต่ละรอบ</h4>
+
+                        <div class="overflow-y-auto bg-gray-50 rounded-lg border border-gray-200 flex-grow mb-4">
+                            ${room.history && room.history.length > 0 ? summaryHtml : '<p class="text-gray-500 italic p-4">ไม่มีประวัติการเล่น</p>'}
+                        </div>
+
+                        <button onclick="document.getElementById('app-modal').remove()" class="btn-primary px-6">
+                            ตกลง / ปิดสรุป
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
         // --- Copy to Clipboard Function ---
         function copyUserIdToClipboard(text) {
             const tempInput = document.createElement("textarea");
@@ -336,6 +375,39 @@
             document.body.removeChild(tempInput);
         }
 
+        // --- NEW: Sign Out Logic ---
+        async function handleSignOut() {
+            // 1. Clean up Firestore data (remove player from room/delete room if alone)
+            if (currentRoomId) {
+                // Pass false so it doesn't try to navigate/setup new listeners,
+                // as we are about to sign out which triggers auth listener navigation.
+                await leaveRoom(false);
+            }
+
+            // 2. Clear local storage and state
+            localStorage.removeItem('player-name');
+            localStorage.removeItem('current-room-id');
+            userName = null;
+            currentRoomId = null;
+            userId = null; // Important: Clear the ID before sign out
+
+            // 3. Stop rooms list listener if active
+            if (roomsListUnsubscribe) {
+                roomsListUnsubscribe();
+                roomsListUnsubscribe = null;
+            }
+
+            // 4. Sign out from Firebase Auth
+            try {
+                await signOut(auth);
+                showMessage('ออกจากระบบเรียบร้อยแล้ว', 'text-blue-600');
+                // The onAuthStateChanged listener will handle screen transition to 'screen-name'
+            } catch (error) {
+                console.error("Error signing out:", error);
+                createModal(`ออกจากระบบไม่สำเร็จ: ${error.message}`);
+            }
+        }
+
 
         // --- Firebase Initialization and Auth ---
 
@@ -351,19 +423,22 @@
                 auth = getAuth(app);
 
                 // 1. Authenticate user
+                // (Initial sign in logic is now mostly handled by onAuthStateChanged)
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    // Sign in anonymously for public web deployment
                     await signInAnonymously(auth);
                 }
 
+
                 // 2. Set up Auth listener
                 onAuthStateChanged(auth, (user) => {
+                    const signOutBtn = document.getElementById('sign-out-btn');
                     if (user) {
                         userId = user.uid;
                         // Display User ID immediately
                         document.getElementById('user-id-display').textContent = userId;
+                        signOutBtn.classList.remove('hidden'); // Show button
 
                         // Check if name is already set
                         const storedName = localStorage.getItem('player-name');
@@ -377,7 +452,16 @@
                             showScreen('screen-name');
                         }
                     } else {
+                        // User is signed out
+                        userId = null;
+                        signOutBtn.classList.add('hidden'); // Hide button
                         showMessage("ไม่ได้เข้าสู่ระบบ", 'text-red-600');
+                        
+                        // Clear any lingering listeners if they weren't cleared by leaveRoom
+                        if (roomSnapshotUnsubscribe) { roomSnapshotUnsubscribe(); roomSnapshotUnsubscribe = null; }
+                        if (roomsListUnsubscribe) { roomsListUnsubscribe(); roomsListUnsubscribe = null; }
+                        
+                        showScreen('screen-name');
                     }
                 });
 
@@ -400,6 +484,19 @@
                 setupRoomsListListener();
             }
         }
+        
+        // --- Admin Delete Logic ---
+        async function adminDeleteRoom(roomId) {
+            if (userId !== ADMIN_USER_ID) return;
+            const roomRef = getRoomDocPath(roomId);
+            try {
+                await deleteDoc(roomRef);
+                // The onSnapshot listener handles UI update
+                showMessage(`[Admin] ลบห้อง ${roomId.substring(0, 4)} สำเร็จ`, 'text-red-600');
+            } catch (error) {
+                createModal(`[Admin] ลบห้องไม่สำเร็จ: ${error.message}`);
+            }
+        }
 
         function setupRoomsListListener() {
             if (roomsListUnsubscribe) roomsListUnsubscribe();
@@ -407,6 +504,7 @@
             const roomsCol = collection(db, getPublicCollectionPath('rooms'));
             // Query for rooms that are WAITING, CHOOSING, or REVEAL and not explicitly finished
             const q = query(roomsCol, where('status', 'in', ['WAITING', 'CHOOSING', 'REVEAL']));
+            const isAdmin = userId === ADMIN_USER_ID;
 
             roomsListUnsubscribe = onSnapshot(q, (snapshot) => {
                 const listEl = document.getElementById('rooms-list');
@@ -425,11 +523,12 @@
                         listEl.insertAdjacentHTML('beforeend', `
                             <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-indigo-200">
                                 <p class="text-base font-medium text-gray-800 truncate">${roomName}</p>
-                                <div class="flex items-center space-x-3">
+                                <div class="flex flex-wrap items-center space-x-3">
                                     <span class="text-sm font-semibold text-primary-color">${playersCount}/${MAX_PLAYERS}</span>
-                                    <button data-room-id="${docSnap.id}" class="btn-join text-sm px-3 py-1 bg-primary-color hover:bg-indigo-700 text-white rounded-md">
+                                    <button data-room-id="${docSnap.id}" class="btn-join text-sm px-3 py-1 bg-primary-color hover:bg-indigo-700 text-white rounded-md mb-1 sm:mb-0">
                                         เข้าร่วม
                                     </button>
+                                    ${isAdmin ? `<button data-room-id="${docSnap.id}" class="btn-delete text-sm px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md mb-1 sm:mb-0">ลบ</button>` : ''}
                                 </div>
                             </div>
                         `);
@@ -440,13 +539,21 @@
                     listEl.innerHTML = '<p class="text-gray-500 italic text-center">ยังไม่มีห้องเกมว่าง สร้างห้องใหม่ได้เลย!</p>';
                 }
 
-                // Add event listeners to new join buttons
+                // Add event listeners to new join and delete buttons
                 listEl.querySelectorAll('.btn-join').forEach(button => {
                     button.onclick = (e) => {
                         const roomId = e.target.getAttribute('data-room-id');
                         joinRoom(roomId, userName);
                     };
                 });
+                 if (isAdmin) {
+                    listEl.querySelectorAll('.btn-delete').forEach(button => {
+                        button.onclick = (e) => {
+                            const roomId = e.target.getAttribute('data-room-id');
+                            adminDeleteRoom(roomId);
+                        };
+                    });
+                }
             }, (error) => {
                 console.error("Error fetching rooms list:", error);
                 document.getElementById('rooms-list').innerHTML = '<p class="text-red-500 italic text-center">ข้อผิดพลาดในการโหลดห้อง</p>';
@@ -457,18 +564,17 @@
             if (!userId || !userName) return createModal('กรุณาใส่ชื่อผู้เล่นก่อน!');
 
             // 1. Create initial room data
-            // NOTE: currentQuestion is set to null, the question will only be loaded when host clicks 'Start Game'
             const initialRoomData = {
                 hostId: userId,
                 hostName: userName,
                 status: 'WAITING',
                 questionIndex: 0,
                 currentQuestion: null, // Start with no question to avoid spoilers
+                history: [], // To store past round details for summary
                 players: {
                     [userId]: { name: userName, choice: null, score: 0, isHost: true }
                 },
                 createdAt: new Date().getTime(),
-                revealStartTime: null // For countdown logic
             };
 
             const roomsCol = collection(db, getPublicCollectionPath('rooms'));
@@ -550,7 +656,7 @@
             roomSnapshotUnsubscribe = onSnapshot(roomRef, (docSnap) => {
                 if (!docSnap.exists()) {
                     createModal('ห้องเกมถูกลบ/ปิดแล้ว! กลับสู่หน้าเลือกห้อง');
-                    leaveRoom(false);
+                    leaveRoom(true); // Navigate back to rooms screen
                     return;
                 }
                 updateGameUI(docSnap.data());
@@ -561,31 +667,9 @@
         }
 
         function getNextQuestion(index) {
-            // Use index modulo array length to cycle questions after MAX_ROUNDS
+            // Use index modulo array length to cycle questions
             const nextIndex = (index - 1) % ALL_QUESTIONS.length;
             return ALL_QUESTIONS[nextIndex];
-        }
-
-        function startCountdown(revealStartTime) {
-            if (countdownTimer) clearInterval(countdownTimer);
-            const timerEl = document.getElementById('countdown-timer');
-            const nextBtn = document.getElementById('next-round-btn');
-
-            nextBtn.disabled = true;
-            timerEl.classList.remove('hidden');
-
-            countdownTimer = setInterval(() => {
-                const elapsedSeconds = Math.floor((new Date().getTime() - revealStartTime) / 1000);
-                const remaining = REVEAL_DURATION_SECONDS - elapsedSeconds;
-
-                if (remaining <= 0) {
-                    clearInterval(countdownTimer);
-                    timerEl.classList.add('hidden');
-                    nextBtn.disabled = false;
-                } else {
-                    timerEl.textContent = `คำถามต่อไปใน ${remaining} วินาที...`;
-                }
-            }, 1000);
         }
 
         function updateGameUI(room) {
@@ -593,12 +677,6 @@
             const playerMap = room.players || {};
             const isHost = room.hostId === userId;
             const myPlayer = playerMap[userId] || {};
-
-            // Clear countdown interval
-            if (countdownTimer) {
-                clearInterval(countdownTimer);
-                document.getElementById('countdown-timer').classList.add('hidden');
-            }
 
             // 1. Update Room Info
             document.getElementById('room-id-display').textContent = room.hostName ? room.hostName : currentRoomId.substring(0, 4);
@@ -627,7 +705,7 @@
             choice1Btn.disabled = true;
             choice2Btn.disabled = true;
 
-            // NEW: Set button text based on whether a question is loaded
+            // Set button text and status based on question
             if (room.status === 'WAITING' || !room.currentQuestion) {
                 choice1Btn.textContent = 'รอเริ่มเกม...';
                 choice2Btn.textContent = 'รอเริ่มเกม...';
@@ -678,8 +756,7 @@
                     if (allChosen && isHost) {
                         // Host automatically advances to REVEAL state
                         const roomRef = getRoomDocPath(currentRoomId);
-                        const timestamp = new Date().getTime();
-                        updateDoc(roomRef, { status: 'REVEAL', revealStartTime: timestamp });
+                        updateDoc(roomRef, { status: 'REVEAL' });
                     }
                     // *** END AUTOMATIC TRANSITION ***
                     break;
@@ -699,29 +776,17 @@
                         if (myPlayer.choice === 'h') choice2Btn.classList.add('loser');
                     }
 
-                    // Show next round button
+                    // Show next round button (IMMEDIATELY ENABLED as requested)
                     if (isHost) {
                         document.getElementById('next-round-btn').textContent = 'คำถามต่อไป';
                         document.getElementById('next-round-btn').classList.remove('hidden');
-                        document.getElementById('next-round-btn').disabled = true; // Disabled until countdown finishes
-
-                        // Start countdown based on the Firestore timestamp
-                        if (room.revealStartTime) {
-                            startCountdown(room.revealStartTime);
-                        } else {
-                             // Fallback if timestamp missing (shouldn't happen)
-                            document.getElementById('next-round-btn').disabled = false;
-                        }
-
+                        document.getElementById('next-round-btn').disabled = false;
                     }
                     break;
 
                 case 'GAME_OVER':
-                    // Determine winner and show modal
-                    const winnerMessage = p1.score > p2.score ? `${p1.name} ชนะ!` :
-                                          p2.score > p1.score ? `${p2.name} ชนะ!` :
-                                          'เสมอกัน!';
-                    createModal(`จบเกม! ${winnerMessage} คะแนนสุดท้าย ${p1.score} - ${p2.score}`);
+                    // Show detailed summary modal
+                    showGameOverSummary(room, p1, p2);
 
                     document.getElementById('game-status-message').textContent = 'จบเกมแล้ว!';
                     document.getElementById('game-status-message').classList.add('text-red-600');
@@ -772,19 +837,37 @@
             let newIndex = room.questionIndex;
             let newPlayers = room.players;
             let newQuestion = room.currentQuestion; // Default to existing question
+            let newHistory = room.history || [];
 
             // 1. Handle transition from REVEAL or WAITING
             if (room.status === 'REVEAL') {
-                // Calculate Score
                 const pIds = Object.keys(newPlayers);
-                if (pIds.length === MAX_PLAYERS) {
-                    const p1Choice = newPlayers[pIds[0]].choice;
-                    const p2Choice = newPlayers[pIds[1]].choice;
+                const p1Id = room.hostId;
+                const p2Id = pIds.find(id => id !== p1Id);
 
-                    if (p1Choice === p2Choice) {
+                // Check if p2 exists before proceeding to calculate score/history
+                if (p2Id) {
+                    const p1 = newPlayers[p1Id];
+                    const p2 = newPlayers[p2Id];
+
+                    // --- Capture History ---
+                    const historyEntry = {
+                        round: room.questionIndex,
+                        question: room.currentQuestion,
+                        p1Choice: p1.choice,
+                        p2Choice: p2.choice,
+                        p1Name: p1.name,
+                        p2Name: p2.name,
+                        match: p1.choice === p2.choice
+                    };
+                    newHistory = [...newHistory, historyEntry];
+                    // -----------------------
+
+                    // Calculate Score
+                    if (historyEntry.match) {
                         // Match! Both get a point
-                        newPlayers[pIds[0]].score += 1;
-                        newPlayers[pIds[1]].score += 1;
+                        newPlayers[p1Id].score += 1;
+                        newPlayers[p2Id].score += 1;
                     }
                 }
 
@@ -793,9 +876,9 @@
                 if (newIndex > MAX_ROUNDS) {
                     newStatus = 'GAME_OVER';
                 }
-                
+
                 // Get the next question (or null if game over)
-                newQuestion = newStatus === 'GAME_OVER' ? null : getNextQuestion(newIndex); 
+                newQuestion = newStatus === 'GAME_OVER' ? null : getNextQuestion(newIndex);
 
             } else if (room.status === 'WAITING') {
                  // Transition from WAITING to CHOOSING (Start Game)
@@ -821,9 +904,9 @@
                 await updateDoc(roomRef, {
                     status: newStatus,
                     questionIndex: newIndex,
-                    currentQuestion: newQuestion, // Include the new question here (or null if game over)
+                    currentQuestion: newQuestion,
                     players: newPlayers,
-                    revealStartTime: null // Clear reveal time
+                    history: newHistory // Update history array
                 });
             } catch (error) {
                 console.error("Error advancing round:", error);
@@ -848,7 +931,7 @@
                      questionIndex: 1,
                      currentQuestion: newQuestion,
                      players: newPlayers,
-                     revealStartTime: null
+                     history: [] // Clear history on reset
                  });
              } catch (error) {
                  console.error("Error resetting room:", error);
@@ -860,10 +943,6 @@
             if (roomSnapshotUnsubscribe) {
                 roomSnapshotUnsubscribe();
                 roomSnapshotUnsubscribe = null;
-            }
-            if (countdownTimer) {
-                clearInterval(countdownTimer);
-                countdownTimer = null;
             }
 
             if (currentRoomId && userId) {
@@ -877,11 +956,11 @@
                         const roomData = docSnap.data();
                         const playersCount = Object.keys(roomData.players || {}).length;
 
-                        // *** LOGIC FOR AUTOMATIC ROOM DELETION (FROM PREVIOUS REQUEST) ***
+                        // LOGIC FOR AUTOMATIC ROOM DELETION
                         if (playersCount === 1 && roomData.players.hasOwnProperty(userId)) {
                             // If only one player left (the current user), delete the room entirely.
                             await deleteDoc(roomRef);
-                            showMessage(`ห้อง ${currentRoomId.substring(0, 4)} ถูกลบแล้ว`, 'text-red-600');
+                            if (navigate) { showMessage(`ห้อง ${currentRoomId.substring(0, 4)} ถูกลบแล้ว`, 'text-red-600'); }
                         } else if (playersCount > 1 && roomData.players.hasOwnProperty(userId)) {
                             // If other players remain, just remove the current player.
                             await updateDoc(roomRef, {
@@ -896,12 +975,14 @@
 
             currentRoomId = null;
             localStorage.removeItem('current-room-id');
-            showMessage(`ออกจากห้องเกมแล้ว`, 'text-blue-600');
+            if (navigate) { showMessage(`ออกจากห้องเกมแล้ว`, 'text-blue-600'); }
 
+            // If navigate is true, we transition back to the rooms list
             if (navigate) {
                 showScreen('screen-rooms');
                 setupRoomsListListener();
             }
+            // If navigate is false (called before sign out), we just clean up Firestore state.
         }
 
         // --- Event Listeners ---
@@ -929,7 +1010,7 @@
         document.getElementById('create-room-btn').onclick = createRoom;
 
         document.getElementById('leave-room-btn').onclick = () => {
-             // Use a custom modal for confirmation (since alert/confirm is forbidden)
+             // Use a custom modal for confirmation
              const message = 'แน่ใจหรือไม่ว่าต้องการออกจากห้อง? หากคุณเป็นคนสุดท้าย ห้องจะถูกลบทิ้ง';
              const existingModal = document.getElementById('app-modal');
              if (existingModal) existingModal.remove();
@@ -952,7 +1033,7 @@
              document.getElementById('cancel-leave-btn').onclick = () => document.getElementById('app-modal').remove();
              document.getElementById('confirm-leave-btn').onclick = () => {
                  document.getElementById('app-modal').remove();
-                 leaveRoom();
+                 leaveRoom(true); // Navigate back to room selection
              };
         };
 
@@ -965,9 +1046,12 @@
             if (document.getElementById('choice-2-btn').classList.contains('placeholder')) return;
             makeChoice('h');
         };
-        
+
         // Host function for starting/advancing round
         document.getElementById('next-round-btn').onclick = nextRound;
+
+        // NEW: Sign Out Button Listener
+        document.getElementById('sign-out-btn').onclick = handleSignOut;
 
 
         // Start the application flow
