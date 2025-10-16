@@ -132,7 +132,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- ส่วนที่ 1: การตั้งค่า Firebase (นำค่าที่คุณให้มาใส่เรียบร้อยแล้ว) ---
         const USER_FIREBASE_CONFIG = {
@@ -263,6 +263,7 @@
         // --- Firestore Reference Functions ---
 
         function getPublicDocRef(collectionName, docId) {
+            // พาธที่ใช้ในการสร้างเกม: artifacts/multiplayer-this-or-that-public/public/data/[collectionName]/[docId]
             return doc(db, 
                 'artifacts', APP_IDENTIFIER, 
                 'public', 'data', 
@@ -293,6 +294,11 @@
         }
 
         async function createGame(opponentId, opponentNickname) {
+            if (!isAuthReady || !userId) {
+                showGlobalMessage('ข้อผิดพลาด: ระบบลงชื่อเข้าใช้ยังไม่พร้อม', 'error');
+                return;
+            }
+            
             try {
                 // 1. Prepare questions
                 let shuffledQuestions = [...ALL_CHOICE_PAIRS];
@@ -319,7 +325,10 @@
                     lastActionTime: serverTimestamp()
                 };
 
+                // ***** การเขียนข้อมูลที่อาจล้มเหลว *****
                 await setDoc(gameDocRef, gameData);
+                // **********************************
+                
                 showGlobalMessage(`เชิญ ${opponentNickname} แล้ว! กำลังรอการตอบรับ...`, 'warning');
                 
                 // 3. Update status and start listening to the game
@@ -328,11 +337,31 @@
 
             } catch (error) {
                 console.error("Error creating game:", error);
-                showGlobalMessage('ไม่สามารถสร้างเกมได้: โปรดลองอีกครั้ง', 'error');
+                
+                let errorMsg = 'ไม่สามารถสร้างเกมได้';
+
+                // ดึงโค้ด Error จาก Firebase (ถ้ามี)
+                if (error.code) {
+                    errorMsg += `: [${error.code}]`;
+                    if (error.code === 'permission-denied') {
+                        errorMsg += " (ปัญหา: Security Rules ไม่อนุญาตให้เขียน)";
+                    } else if (error.code === 'unauthenticated') {
+                        errorMsg += " (ปัญหา: ผู้ใช้ไม่ได้ลงชื่อเข้าใช้)";
+                    }
+                } else {
+                    errorMsg += " (โปรดตรวจสอบ Console)";
+                }
+
+                showGlobalMessage(errorMsg, 'error');
+                // หากล้มเหลว ให้กลับไปสถานะ Online ทันที
+                updatePlayerStatus('Online');
+                setView('lobby'); 
             }
         }
         
         async function acceptInvitation(gameId) {
+            if (!isAuthReady || !userId) return;
+
             try {
                 await runTransaction(db, async (transaction) => {
                     const gameDocRef = getPublicDocRef('games', gameId);
@@ -370,7 +399,7 @@
                 });
             } catch (error) {
                 console.error("Transaction failed (Accept Invite):", error);
-                showGlobalMessage('ไม่สามารถตอบรับคำเชิญได้: ' + (typeof error === 'string' ? error : ''), 'error');
+                showGlobalMessage('ไม่สามารถตอบรับคำเชิญได้: ' + (error.code || (typeof error === 'string' ? error : 'โปรดดู console')), 'error');
                 updatePlayerStatus('Online'); 
             }
         }
@@ -386,6 +415,7 @@
                 invitationNotificationEl.classList.add('hidden');
             } catch (e) {
                  console.error("Error declining invite:", e);
+                 showGlobalMessage('ปฏิเสธคำเชิญไม่สำเร็จ: ' + (e.code || 'โปรดดู console'), 'error');
             }
         }
         
@@ -427,6 +457,7 @@
 
         function startListeningToLobby() {
             if (unsubscribeLobby) unsubscribeLobby();
+            if (!isAuthReady) return;
 
             const q = query(
                 getPublicCollectionRef('onlineUsers'),
@@ -483,6 +514,8 @@
         
         function startListeningToGame(gameId) {
             if (unsubscribeGame) unsubscribeGame();
+            if (!isAuthReady) return;
+            
             setView('game');
 
             const gameDocRef = getPublicDocRef('games', gameId);
@@ -525,7 +558,7 @@
 
             }, (error) => {
                 console.error("Game listener error:", error);
-                showGlobalMessage('การเชื่อมต่อเกมมีปัญหา', 'error');
+                showGlobalMessage('การเชื่อมต่อเกมมีปัญหา: ' + error.code, 'error');
                 handleGameEnd(true);
             });
         }
@@ -646,7 +679,7 @@
 
             } catch (error) {
                 console.error("Error setting choice (transaction failed):", error);
-                showGlobalMessage('บันทึกตัวเลือกไม่สำเร็จ', 'error');
+                showGlobalMessage('บันทึกตัวเลือกไม่สำเร็จ: ' + (error.code || 'โปรดดู console'), 'error');
             }
         }
         
@@ -654,17 +687,20 @@
             if (!currentGameId || !isHost) return;
 
             const gameDocRef = getPublicDocRef('games', currentGameId);
-            // ต้องดึงข้อมูลล่าสุดมาเพื่อดู index
-            const docSnap = await doc(db, getPublicDocRef('games', currentGameId).path).get();
+            const docSnap = await getDoc(gameDocRef); // ใช้ getDoc
             if (!docSnap.exists()) return;
             const currentQIndex = docSnap.data().currentQuestionIndex;
 
             if (currentQIndex + 1 >= totalQuestions) {
                 // End game
-                await updateDoc(gameDocRef, {
-                    status: 'GAME_OVER',
-                    lastActionTime: serverTimestamp()
-                });
+                try {
+                    await updateDoc(gameDocRef, {
+                        status: 'GAME_OVER',
+                        lastActionTime: serverTimestamp()
+                    });
+                } catch (e) {
+                     showGlobalMessage('ไม่สามารถจบเกมได้: ' + (e.code || 'โปรดดู console'), 'error');
+                }
             } else {
                 // Next question
                 try {
@@ -678,7 +714,7 @@
                     nextRoundBtn.classList.add('hidden');
                 } catch (error) {
                     console.error("Error advancing round:", error);
-                    showGlobalMessage('ไม่สามารถไปคำถามต่อไปได้', 'error');
+                    showGlobalMessage('ไม่สามารถไปคำถามต่อไปได้: ' + (error.code || 'โปรดดู console'), 'error');
                 }
             }
         }
@@ -694,19 +730,15 @@
 
             if (wasInterrupted) {
                 finalScoreMessageEl.innerHTML = `<span class="text-red-500 font-bold">คู่ต่อสู้ของคุณออกจากเกมไปแล้ว</span><br>โปรดกลับสู่ล็อบบี้เพื่อเริ่มใหม่`;
+            } else {
+                const opponentId = getOpponentId(gameData);
+                const opponentNickname = gameData.players[opponentId].nickname;
                 
-                updatePlayerStatus('Online');
-                setView('game-over');
-                return;
+                finalScoreMessageEl.innerHTML = `
+                    คุณเล่นกับ ${opponentNickname} ครบ ${totalQuestions} คำถามแล้ว!<br>
+                    <span class="text-blue-600 font-bold text-2xl">จบเกม!</span>
+                `;
             }
-
-            const opponentId = getOpponentId(gameData);
-            const opponentNickname = gameData.players[opponentId].nickname;
-            
-            finalScoreMessageEl.innerHTML = `
-                คุณเล่นกับ ${opponentNickname} ครบ ${totalQuestions} คำถามแล้ว!<br>
-                <span class="text-blue-600 font-bold text-2xl">จบเกม!</span>
-            `;
 
             updatePlayerStatus('Online');
             setView('game-over');
@@ -715,6 +747,11 @@
         // --- Event Listeners Setup (ไม่ได้เปลี่ยนแปลง) ---
 
         joinBtn.addEventListener('click', async () => {
+            if (!isAuthReady) {
+                showGlobalMessage('ระบบลงชื่อเข้าใช้ยังไม่พร้อม (โปรดรอสักครู่)', 'warning');
+                return;
+            }
+
             const inputNickname = nicknameInputEl.value.trim();
             if (inputNickname.length < 2 || inputNickname.length > 15) {
                 showGlobalMessage('ชื่อเล่นต้องมีความยาวระหว่าง 2 ถึง 15 ตัวอักษร', 'error');
@@ -771,6 +808,10 @@
                 const userCredential = await signInAnonymously(auth);
                 userId = userCredential.user.uid;
                 isAuthReady = true;
+
+                // ** LOG ที่สำคัญ **
+                console.log("Firebase Auth SUCCESS. User ID:", userId);
+                userStatusDisplayEl.textContent = `สถานะ: พร้อม (UserID: ${userId.substring(0, 8)}...)`;
                 
                 // ลบสถานะออนไลน์เก่าออก 
                 await deleteDoc(getPublicDocRef('onlineUsers', userId)).catch(e => console.log('No old presence record to delete.'));
@@ -778,17 +819,21 @@
                 setView('nickname'); 
 
             } catch (error) {
-                console.error("Firebase initialization or auth failed:", error);
-                showGlobalMessage('ข้อผิดพลาดในการเชื่อมต่อ: กรุณาตรวจสอบ Firebase Config หรือสถานะบริการ', 'error');
+                console.error("Firebase initialization or auth FAILED:", error);
+                let errorMsg = 'ข้อผิดพลาดในการเชื่อมต่อ Firebase';
+                if (error.code) {
+                    errorMsg += `: [${error.code}]`;
+                }
+                showGlobalMessage(errorMsg, 'error');
+                userStatusDisplayEl.textContent = 'สถานะ: ข้อผิดพลาดการเชื่อมต่อ';
             }
         }
         
-        // ตรวจสอบกฎความปลอดภัยของ Firestore
-        console.warn(`*** สำคัญ: ตรวจสอบให้แน่ใจว่า Firestore Security Rules ของคุณอนุญาตให้ผู้ใช้ที่เข้าสู่ระบบแบบไม่ระบุชื่อ (Authenticated) อ่านและเขียนในพาธ /artifacts/${APP_IDENTIFIER}/public/data/... ได้ ***`);
-
         window.onload = initFirebase;
 
     </script>
 
 </body>
 </html>
+
+
