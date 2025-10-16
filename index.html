@@ -134,29 +134,36 @@
         import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // --- ส่วนที่ 1: การตั้งค่า Firebase ที่ถูกต้องตามสภาพแวดล้อม ---
+        // --- ส่วนที่ 1: การตั้งค่า Firebase ที่ถูกต้องตามสภาพแวดล้อม (Super Robust Version) ---
         let firebaseConfig = null;
         let appId = 'default-app-id-fallback';
+        let isConfigValid = false; // Flag เพื่อตรวจสอบความสำเร็จในการโหลด Config
 
         try {
-            // 1. Access App ID (string)
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id-fallback';
+            // 1. Access App ID (string) - ตรวจสอบว่าไม่เป็น undefined และไม่เป็นค่าว่าง
+            appId = typeof __app_id !== 'undefined' && __app_id !== '' ? __app_id : 'default-app-id-fallback';
 
             // 2. Access and Parse Firebase Config (JSON string)
-            const firebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            const firebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : '';
             
-            if (firebaseConfigJson) {
-                // ต้องมีการป้องกันการ parse ที่ล้มเหลว
+            // ตรวจสอบความยาวของ String ก่อนเรียก JSON.parse
+            if (firebaseConfigJson.length > 0) {
                 firebaseConfig = JSON.parse(firebaseConfigJson);
+                isConfigValid = true; // ตั้งค่า Flag เมื่อ Parse สำเร็จ
+            } else {
+                throw new Error("Firebase config variable is empty.");
             }
 
         } catch (e) {
             console.error("FATAL: Error accessing or parsing global Firebase configs:", e);
+            
             // แสดงข้อความผิดพลาดทันทีหากการดึงค่าล้มเหลว
             const userStatusDisplayEl = document.getElementById('user-status-display');
             userStatusDisplayEl.textContent = 'สถานะ: ข้อผิดพลาดการตั้งค่า';
             const globalMessageEl = document.getElementById('global-message');
-            globalMessageEl.textContent = 'ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase (กรุณารีโหลด)';
+            globalMessageEl.textContent = 'ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase (โค้ดล้มเหลวในการอ่าน Config)';
+            
+            globalMessageEl.className = 'p-3 rounded-lg font-medium text-center transition-all duration-300 bg-red-100 text-red-800 border border-red-300';
             globalMessageEl.classList.remove('hidden');
         }
 
@@ -811,11 +818,10 @@
         // --- Firebase Initialization ---
 
         async function initFirebase() {
-            // Check if global configs were successfully parsed
-            if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
-                 console.error("Firebase Config is missing or empty. Cannot initialize.");
-                 showGlobalMessage('ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase', 'error');
-                 return;
+            // ใช้ isConfigValid ที่ตั้งค่าไว้จาก try...catch ด้านบน
+            if (!isConfigValid) {
+                 console.error("Firebase Config is marked invalid. Cannot initialize.");
+                 return; // ออกจากฟังก์ชันเพราะ Config ไม่ถูกต้อง
             }
 
             try {
