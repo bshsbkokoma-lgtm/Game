@@ -3,864 +3,481 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เลือกสิ่งนี้หรือสิ่งนั้น (This or That) Multi-Player</title>
-    <!-- Load Tailwind CSS -->
+    <title>เกมเลือกฝั่ง (This or That)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f7f9fb;
+            font-family: 'Kanit', sans-serif;
         }
-        .container {
-            max-width: 900px;
+        .btn {
+            @apply w-full px-4 py-3 text-lg font-bold text-white rounded-lg shadow-md transition-all duration-200 ease-in-out;
         }
-        .game-button {
-            transition: all 0.2s ease;
-            box-shadow: 0 4px #4f46e5;
+        .btn-primary {
+            @apply bg-blue-500 hover:bg-blue-600 active:scale-95;
         }
-        .game-button:active {
-            box-shadow: 0 0 #4f46e5;
-            transform: translateY(4px);
+        .btn-secondary {
+            @apply bg-green-500 hover:bg-green-600 active:scale-95;
         }
-        .choice-btn {
-            background-color: #2563eb;
-            color: white;
-            box-shadow: 0 6px #1e40af;
+        .btn-disabled {
+            @apply bg-gray-400 cursor-not-allowed;
         }
-        .choice-btn:hover {
-            background-color: #3b82f6;
+        .card {
+            @apply bg-white p-6 md:p-8 rounded-xl shadow-2xl;
         }
-        .choice-btn:active {
-            box-shadow: 0 2px #1e40af;
-            transform: translateY(4px);
-        }
-        /* Custom modal styles */
-        .modal {
-            transition: opacity 0.3s ease-in-out;
+        .hidden {
+            display: none;
         }
     </style>
 </head>
-<body class="p-4 md:p-8 min-h-screen flex items-start justify-center">
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
 
-    <div id="app" class="container w-full bg-white p-6 md:p-10 rounded-xl shadow-2xl border border-indigo-100">
-        <h1 class="text-4xl font-bold text-center text-indigo-700 mb-6">เกม เลือกสิ่งนี้หรือสิ่งนั้น</h1>
-        <p class="text-center text-gray-600 mb-8">มาเล่นเกมสนุกๆ เพื่อค้นหาความเห็นที่คล้ายกันหรือแตกต่างกันกับเพื่อนๆ!</p>
+    <div id="app-container" class="w-full max-w-md mx-auto p-4">
 
-        <!-- Dynamic Content Area -->
-        <div id="content-area">
-            <!-- Content will be injected here (Login, Lobby, Game) -->
+        <!-- Login Screen -->
+        <div id="login-screen" class="card text-center">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">เกมเลือกฝั่ง</h1>
+            <p class="text-gray-500 mb-6">ใส่ชื่อของคุณเพื่อเริ่มเล่นกับเพื่อนๆ</p>
+            <input type="text" id="name-input" class="w-full px-4 py-2 border rounded-lg mb-4" placeholder="ชื่อของคุณ...">
+            <!-- CHANGED: Button is disabled by default -->
+            <button id="login-button" class="btn btn-primary btn-disabled" disabled>กำลังเชื่อมต่อ...</button>
+            <p id="login-error" class="text-red-500 mt-2 hidden">กรุณาใส่ชื่อของคุณ</p>
         </div>
 
-        <!-- System Message/Status -->
-        <div id="status-message" class="mt-8 text-center text-sm text-red-500 font-medium hidden"></div>
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="hidden">
+            <div class="card mb-4">
+                <h2 class="text-2xl font-bold text-gray-800 mb-1">สวัสดี, <span id="user-name-display" class="text-blue-500"></span>!</h2>
+                <p class="text-gray-500">เชิญผู้เล่นที่ออนไลน์อยู่เพื่อเริ่มเกม</p>
+            </div>
 
-        <!-- Loading Spinner -->
-        <div id="loading" class="hidden text-center mt-10">
-            <svg class="animate-spin h-8 w-8 text-indigo-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-2 text-indigo-500">กำลังโหลด...</p>
-        </div>
-    </div>
+            <div class="card mb-4">
+                <h3 class="text-xl font-bold mb-3">คำเชิญ</h3>
+                <div id="invitations-list" class="space-y-2">
+                    <p class="text-gray-400">ยังไม่มีคำเชิญ...</p>
+                </div>
+            </div>
 
-    <!-- Reusable Modal (for notifications/invites) -->
-    <div id="modal-container" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 opacity-0 pointer-events-none">
-        <div id="modal-content" class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full transform scale-95 transition-transform duration-300">
-            <h3 id="modal-title" class="text-xl font-bold text-gray-800 mb-4"></h3>
-            <p id="modal-body" class="text-gray-600 mb-6"></p>
-            <div class="flex justify-end space-x-3">
-                <button id="modal-cancel" class="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition duration-150">ยกเลิก</button>
-                <button id="modal-confirm" class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150">ตกลง</button>
+            <div class="card">
+                <h3 class="text-xl font-bold mb-3">ผู้เล่นที่ออนไลน์</h3>
+                <ul id="player-list" class="space-y-2">
+                    <li class="text-center text-gray-400">กำลังโหลดรายชื่อผู้เล่น...</li>
+                </ul>
+            </div>
+             <div class="mt-4 text-center text-xs text-gray-400">
+                <p>User ID ของคุณ: <span id="user-id-display"></span></p>
             </div>
         </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="hidden">
+            <div class="card text-center">
+                <div class="flex justify-between items-center mb-4 text-sm font-semibold">
+                    <span id="player1-name" class="text-blue-600 bg-blue-100 px-3 py-1 rounded-full"></span>
+                    <span class="text-gray-500">VS</span>
+                    <span id="player2-name" class="text-green-600 bg-green-100 px-3 py-1 rounded-full"></span>
+                </div>
+
+                <h2 id="question-counter" class="text-xl font-bold text-gray-700 mb-2">คำถามที่ 1</h2>
+                <p id="question-text" class="text-2xl md:text-3xl font-bold text-gray-800 mb-6 h-24 flex items-center justify-center">คำถาม...</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <button id="option-a-button" class="btn bg-pink-500 hover:bg-pink-600 active:scale-95"></button>
+                    <button id="option-b-button" class="btn bg-indigo-500 hover:bg-indigo-600 active:scale-95"></button>
+                </div>
+                
+                <div id="game-status" class="mt-4 h-12 flex items-center justify-center">
+                     <p class="text-gray-500">กรุณาเลือกคำตอบของคุณ</p>
+                </div>
+
+                <div id="result-display" class="hidden mt-4 text-lg space-y-2">
+                    <p id="player1-choice"></p>
+                    <p id="player2-choice"></p>
+                </div>
+
+                <button id="next-question-button" class="btn btn-secondary mt-4 hidden">คำถามต่อไป</button>
+                 <button id="end-game-button" class="btn bg-red-500 hover:bg-red-600 active:scale-95 mt-4 hidden">จบเกมและกลับไปที่ล็อบบี้</button>
+            </div>
+        </div>
+
     </div>
 
-
-    <!-- Firebase SDKs -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, getDocs, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // >>>>>>>>>>>>>>>>> 1. แก้ไขส่วนนี้สำหรับ GitHub Pages (ถ้าคุณรันเอง) <<<<<<<<<<<<<<<<<
-        // คัดลอก Firebase Config Object (รวมถึงวงเล็บปีกกา {}) ของโปรเจกต์คุณมาวางแทนที่ null ตรงนี้:
-        const USER_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
-          authDomain: "game-8ede6.firebaseapp.com",
-          projectId: "game-8ede6",
-          storageBucket: "game-8ede6.firebasestorage.app",
-          messagingSenderId: "206374174939",
-          appId: "1:206374174939:web:48556411426f53859a4cfe",
-          measurementId: "G-KG84KJ11VC"
-        }; // <<< วาง Firebase Config ของคุณตรงนี้ (ได้ถูกวางแล้ว)
-
-        // --- GLOBAL VARIABLES (Provided by Canvas Environment - DO NOT EDIT) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue, onDisconnect, remove, push, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
-        // ตรวจสอบ Config: ใช้ Config ที่ผู้ใช้กำหนด (ถ้ามี) หรือใช้ Config ที่ระบบ Canvas ให้มา
-        const firebaseConfig = USER_FIREBASE_CONFIG || (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null);
+        // --- Firebase Config ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", databaseURL: "YOUR_DATABASE_URL", projectId: "YOUR_PROJECT_ID", storageBucket: "YOUR_STORAGE_BUCKET", messagingSenderId: "YOUR_MESSAGING_SENDER_ID", appId: "YOUR_APP_ID" };
 
-        let app, db, auth;
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const auth = getAuth(app);
 
-        if (firebaseConfig) {
-            setLogLevel('Debug'); // Enable Firestore logging
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            window.db = db;
-            window.auth = auth;
-        } else {
-            // Render error message to the user if config is missing
-            document.addEventListener('DOMContentLoaded', () => {
-                document.getElementById('content-area').innerHTML = `
-                    <div class="text-center p-8 bg-red-100 rounded-xl text-red-700 shadow-md">
-                        <p class="font-bold text-2xl mb-3">❌ ข้อผิดพลาดในการตั้งค่า Firebase</p>
-                        <p class="text-lg">กรุณาเพิ่ม Firebase Config ของโปรเจกต์ของคุณลงในตัวแปร <code class="bg-red-200 p-1 rounded font-mono">USER_FIREBASE_CONFIG</code> ในส่วน JavaScript</p>
-                        <p class="mt-4 text-sm text-red-600">การตั้งค่านี้จำเป็นสำหรับการใช้งานฐานข้อมูลแบบหลายผู้เล่น (Multiplayer)</p>
-                    </div>
-                `;
-                document.getElementById('loading').classList.add('hidden');
-            });
-            // Stop initialization
-            console.error("FIREBASE CONFIGURATION MISSING: Please insert your Firebase config into USER_FIREBASE_CONFIG.");
-        }
+        // --- DOM Elements ---
+        const loginScreen = document.getElementById('login-screen');
+        const lobbyScreen = document.getElementById('lobby-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const nameInput = document.getElementById('name-input');
+        const loginButton = document.getElementById('login-button');
+        const loginError = document.getElementById('login-error');
+        const userNameDisplay = document.getElementById('user-name-display');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const playerList = document.getElementById('player-list');
+        const invitationsList = document.getElementById('invitations-list');
+        
+        // Game screen elements
+        const player1Name = document.getElementById('player1-name');
+        const player2Name = document.getElementById('player2-name');
+        const questionCounter = document.getElementById('question-counter');
+        const questionText = document.getElementById('question-text');
+        const optionAButton = document.getElementById('option-a-button');
+        const optionBButton = document.getElementById('option-b-button');
+        const gameStatus = document.getElementById('game-status');
+        const resultDisplay = document.getElementById('result-display');
+        const player1Choice = document.getElementById('player1-choice');
+        const player2Choice = document.getElementById('player2-choice');
+        const nextQuestionButton = document.getElementById('next-question-button');
+        const endGameButton = document.getElementById('end-game-button');
 
+        // --- Game State ---
+        let userId;
+        let userName;
+        let currentGameId = null;
+        let playerListeners = {};
+        let gameListener = null;
+        let invitationsListener = null;
 
-        // --- FIREBASE PATHS & GAME DATA ---
-        const PUBLIC_COLLECTION_USERS = `/artifacts/${appId}/public/data/online_users`;
-        const PUBLIC_COLLECTION_GAMES = `/artifacts/${appId}/public/data/games`;
-
-        const GAME_QUESTIONS = [
-            { optionA: "แมว", optionB: "หมา" },
-            { optionA: "กาแฟ", optionB: "ชา" },
-            { optionA: "ทะเล", optionB: "ภูเขา" },
-            { optionA: "อ่านหนังสือ", optionB: "ดูหนัง" },
-            { optionA: "ฤดูร้อน", optionB: "ฤดูหนาว" },
-            { optionA: "อาหารไทย", optionB: "อาหารญี่ปุ่น" },
-            { optionA: "ฟังเพลง", optionB: "เล่นเกม" },
-            { optionA: "ตื่นเช้า", optionB: "นอนดึก" },
-            { optionA: "เงิน", optionB: "เวลา" },
-            { optionA: "โทรศัพท์", optionB: "คอมพิวเตอร์" },
+        const questions = [
+            { a: "แมว", b: "หมา" },
+            { a: "ทะเล", b: "ภูเขา" },
+            { a: "กาแฟ", b: "ชา" },
+            { a: "ดูหนังที่บ้าน", b: "ดูหนังในโรง" },
+            { a: "กลางคืน", b: "กลางวัน" },
+            { a: "พิซซ่า", b: "เบอร์เกอร์" },
+            { a: "ร้องเพลง", b: "เต้น" },
+            { a: "อ่านหนังสือ", b: "ฟังเพลง" },
+            { a: "อยู่คนเดียว", b: "อยู่กับเพื่อน" },
+            { a: "เงิน", b: "ความรัก" },
         ];
 
+        // --- Authentication ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdDisplay.textContent = userId;
 
-        // --- UI UTILITY FUNCTIONS ---
-        const $ = (selector) => document.querySelector(selector);
-        const $$ = (selector) => document.querySelectorAll(selector);
+                // --- CHANGE: Enable the login button now that we have a user ID ---
+                loginButton.disabled = false;
+                loginButton.textContent = 'เข้าสู่ระบบ';
+                loginButton.classList.remove('btn-disabled');
 
-        const showLoading = (show) => {
-            $("#loading").classList.toggle('hidden', !show);
-            $("#content-area").classList.toggle('hidden', show);
-        };
-
-        const showStatus = (message) => {
-            const statusEl = $("#status-message");
-            statusEl.textContent = message;
-            statusEl.classList.remove('hidden');
-            setTimeout(() => statusEl.classList.add('hidden'), 5000);
-        };
-
-        const showModal = (title, body, onConfirm, onCancel, confirmText = 'ตกลง', cancelText = 'ยกเลิก') => {
-            const modalContainer = $("#modal-container");
-            $("#modal-title").textContent = title;
-            $("#modal-body").textContent = body;
-            $("#modal-confirm").textContent = confirmText;
-            $("#modal-cancel").textContent = cancelText;
-
-            // Clear previous listeners
-            const confirmBtn = $("#modal-confirm");
-            const cancelBtn = $("#modal-cancel");
-            confirmBtn.onclick = null;
-            cancelBtn.onclick = null;
-
-            confirmBtn.onclick = () => {
-                onConfirm && onConfirm();
-                hideModal();
-            };
-            cancelBtn.onclick = () => {
-                onCancel && onCancel();
-                hideModal();
-            };
-
-            modalContainer.classList.remove('opacity-0', 'pointer-events-none');
-            $("#modal-content").classList.remove('scale-95');
-            $("#modal-content").classList.add('scale-100');
-        };
-
-        const hideModal = () => {
-            const modalContainer = $("#modal-container");
-            modalContainer.classList.add('opacity-0', 'pointer-events-none');
-            $("#modal-content").classList.add('scale-95');
-            $("#modal-content").classList.remove('scale-100');
-        };
-
-        // --- APPLICATION STATE (Simplified Global Object) ---
-        let appState = {
-            userId: null,
-            userName: null,
-            isAuthReady: false,
-            onlineUsers: {}, // key: userId, value: { name, status }
-            currentGameId: null,
-            currentGame: null,
-            unsubscribeOnlineUsers: null,
-            unsubscribeCurrentGame: null,
-        };
-
-        // --- RENDER FUNCTIONS ---
-
-        function renderLogin() {
-            if (appState.isAuthReady && appState.userId && appState.userName) {
-                renderLobby();
-                return;
-            }
-
-            $("#content-area").innerHTML = `
-                <div class="text-center p-6 bg-indigo-50 rounded-lg">
-                    <h2 class="text-2xl font-semibold mb-4 text-indigo-800">กรุณาใส่ชื่อของคุณ</h2>
-                    <input id="name-input" type="text" placeholder="เช่น สมชาย หรือ Jane" maxlength="15"
-                           class="w-full md:w-96 p-3 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 mb-4 text-center text-lg"/>
-                    <button id="join-btn"
-                            class="game-button w-full md:w-auto px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">
-                        เข้าสู่ล็อบบี้
-                    </button>
-                </div>
-            `;
-            $("#join-btn").addEventListener('click', handleJoinLobby);
-            $("#name-input").addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') handleJoinLobby();
-            });
-        }
-
-        function renderLobby() {
-            const { userId, userName, onlineUsers } = appState;
-            
-            // Filter out the current user
-            const otherUsers = Object.values(onlineUsers).filter(u => u.id !== userId && u.status === 'online');
-
-            $("#content-area").innerHTML = `
-                <div class="p-4 bg-gray-50 rounded-lg mb-6 shadow-inner">
-                    <p class="text-lg font-semibold text-gray-700">ชื่อของคุณ: <span class="text-indigo-600">${userName}</span></p>
-                    <p class="text-xs text-gray-500 mt-1">รหัสผู้ใช้: ${userId}</p>
-                    <button id="signout-btn" class="mt-3 px-3 py-1 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition">เปลี่ยนชื่อ/ออกจากระบบ</button>
-                </div>
-                
-                <h2 class="text-2xl font-bold text-indigo-700 mb-4">ผู้เล่นออนไลน์ (${otherUsers.length})</h2>
-                
-                <div id="online-list" class="space-y-3 max-h-80 overflow-y-auto pr-2">
-                    ${otherUsers.length > 0 ? otherUsers.map(user => `
-                        <div class="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-md">
-                            <span class="font-medium text-gray-800">${user.name}</span>
-                            <button data-id="${user.id}"
-                                    class="invite-btn px-4 py-2 text-sm bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition duration-150">
-                                เชิญเล่น
-                            </button>
-                        </div>
-                    `).join('') : `
-                        <div class="p-6 text-center text-gray-500 bg-white rounded-xl border border-dashed">
-                            <p>ไม่มีผู้เล่นออนไลน์คนอื่น ๆ ลองชวนเพื่อนมาเล่นสิ!</p>
-                        </div>
-                    `}
-                </div>
-            `;
-            
-            $$(".invite-btn").forEach(btn => {
-                btn.addEventListener('click', (e) => handleSendInvite(e.target.dataset.id));
-            });
-            $("#signout-btn").addEventListener('click', handleSignOut);
-        }
-
-        function renderGame() {
-            const { currentGame, userId } = appState;
-            if (!currentGame) return;
-
-            const players = Object.values(currentGame.players);
-            const myPlayer = currentGame.players[userId];
-            const opponentId = players.find(p => p.id !== userId).id;
-            const opponentPlayer = currentGame.players[opponentId];
-
-            const currentQ = GAME_QUESTIONS[currentGame.currentQuestionIndex];
-            const myChoice = myPlayer.choice;
-            const opponentChoice = opponentPlayer.choice;
-
-            const isRevealed = currentGame.status === 'revealed';
-            const isMyTurn = !myChoice;
-
-            const playerCard = (player, isOpponent) => `
-                <div class="flex flex-col items-center p-4 rounded-xl ${isOpponent ? 'bg-indigo-100' : 'bg-green-100'} shadow-md border border-${isOpponent ? 'indigo' : 'green'}-300">
-                    <p class="text-xl font-bold text-gray-800">${player.name}</p>
-                    <p class="text-3xl font-extrabold text-${isOpponent ? 'indigo' : 'green'}-600 mt-1">${player.score}</p>
-                    <p class="text-sm text-gray-500 mt-2">คะแนน</p>
-                    ${isRevealed && player.choice ? `
-                        <p class="mt-4 text-lg font-bold p-2 rounded-lg bg-white shadow-inner border border-gray-300">
-                            เลือก: ${player.choice}
-                        </p>
-                    ` : isRevealed && !player.choice ? `
-                        <p class="mt-4 text-sm text-red-500">ไม่ได้เลือก</p>
-                    ` : myChoice && isOpponent && !opponentChoice ? `
-                        <p class="mt-4 text-sm text-gray-500">รอกำลังเลือก...</p>
-                    ` : isOpponent && !isMyTurn ? `
-                        <p class="mt-4 text-sm text-gray-500">กำลังรอการเลือก</p>
-                    ` : ''}
-                </div>
-            `;
-
-            $("#content-area").innerHTML = `
-                <div class="text-center mb-6">
-                    <p class="text-gray-500 font-medium">คำถามที่ ${currentGame.currentQuestionIndex + 1} / ${GAME_QUESTIONS.length}</p>
-                    <h2 class="text-3xl font-bold text-indigo-700 mt-2">
-                        เลือกสิ่งนี้ หรือ สิ่งนั้น
-                    </h2>
-                </div>
-
-                <!-- Scoreboard -->
-                <div class="grid grid-cols-2 gap-4 mb-8">
-                    ${playerCard(myPlayer, false)}
-                    ${playerCard(opponentPlayer, true)}
-                </div>
-
-                <!-- Question & Choices -->
-                <div id="question-area" class="text-center p-6 bg-indigo-50 rounded-xl shadow-lg border border-indigo-200">
-                    <p class="text-xl font-semibold mb-4 text-gray-700">คุณจะเลือก:</p>
-                    <div class="flex space-x-4 md:space-x-8 justify-center">
-                        <button id="choice-a" data-choice="${currentQ.optionA}"
-                                class="choice-btn w-full p-4 rounded-xl text-2xl font-extrabold transition-all duration-200 ${myChoice ? 'opacity-50 cursor-not-allowed' : ''}"
-                                ${myChoice ? 'disabled' : ''}>
-                            ${currentQ.optionA}
-                        </button>
-                        <span class="text-4xl font-black text-indigo-500 flex items-center">หรือ</span>
-                        <button id="choice-b" data-choice="${currentQ.optionB}"
-                                class="choice-btn w-full p-4 rounded-xl text-2xl font-extrabold transition-all duration-200 ${myChoice ? 'opacity-50 cursor-not-allowed' : ''}"
-                                ${myChoice ? 'disabled' : ''}>
-                            ${currentQ.optionB}
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Game Status/Action -->
-                <div class="mt-6 text-center">
-                    ${isRevealed ? `
-                        <p class="text-2xl font-bold text-green-600 mb-4">🎉 ผลลัพธ์: ${myChoice === opponentChoice ? 'คุณเลือกเหมือนกัน!' : 'คุณเลือกแตกต่างกัน!'}</p>
-                        ${currentGame.currentQuestionIndex + 1 < GAME_QUESTIONS.length ? `
-                            <button id="next-q-btn" class="game-button px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition">
-                                คำถามต่อไป
-                            </button>
-                        ` : `
-                            <button id="end-game-btn" class="game-button px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition">
-                                จบเกมและกลับล็อบบี้
-                            </button>
-                        `}
-                    ` : myChoice ? `
-                        <p class="text-xl font-semibold text-gray-600">✅ คุณเลือกแล้ว รอกำลังคู่ต่อสู้เลือก...</p>
-                    ` : `
-                        <p class="text-xl font-semibold text-indigo-500">กรุณาเลือกหนึ่งตัวเลือก</p>
-                    `}
-                </div>
-            `;
-
-            if (!myChoice) {
-                $("#choice-a").addEventListener('click', handleMakeChoice);
-                $("#choice-b").addEventListener('click', handleMakeChoice);
-            }
-
-            if (isRevealed) {
-                if (currentGame.currentQuestionIndex + 1 < GAME_QUESTIONS.length) {
-                    $("#next-q-btn").addEventListener('click', handleNextQuestion);
-                } else {
-                    $("#end-game-btn").addEventListener('click', handleEndGame);
-                }
-            }
-        }
-
-        function renderEndGame() {
-            const { currentGame, userId } = appState;
-            const myPlayer = currentGame.players[userId];
-            const players = Object.values(currentGame.players);
-            const opponentPlayer = players.find(p => p.id !== userId);
-
-            const winner = myPlayer.score > opponentPlayer.score ? myPlayer.name :
-                          opponentPlayer.score > myPlayer.score ? opponentPlayer.name : 'ไม่มี';
-
-            $("#content-area").innerHTML = `
-                <div class="text-center p-8 bg-yellow-50 rounded-xl shadow-lg border border-yellow-300">
-                    <h2 class="text-3xl font-bold text-yellow-800 mb-4">🏆 สิ้นสุดเกม! 🏆</h2>
-                    <p class="text-xl font-semibold text-gray-700 mb-6">ผลคะแนนสุดท้าย:</p>
-
-                    <div class="flex justify-center space-x-6 mb-8">
-                        <div class="p-4 bg-green-100 rounded-lg shadow-inner w-40">
-                            <p class="text-lg font-bold">${myPlayer.name}</p>
-                            <p class="text-4xl font-extrabold text-green-600">${myPlayer.score}</p>
-                        </div>
-                        <div class="p-4 bg-indigo-100 rounded-lg shadow-inner w-40">
-                            <p class="text-lg font-bold">${opponentPlayer.name}</p>
-                            <p class="text-4xl font-extrabold text-indigo-600">${opponentPlayer.score}</p>
-                        </div>
-                    </div>
-
-                    <p class="text-2xl font-bold text-red-600 mb-8">
-                        ผู้ชนะคือ: ${winner !== 'ไม่มี' ? winner : 'เสมอ!'}
-                    </p>
-
-                    <button id="back-to-lobby-btn" class="game-button px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition">
-                        กลับสู่ล็อบบี้
-                    </button>
-                </div>
-            `;
-            $("#back-to-lobby-btn").addEventListener('click', () => handleReturnToLobby(currentGame.id));
-        }
-
-        // --- FIREBASE AND AUTHENTICATION LOGIC ---
-
-        async function initAuthAndFirestore() {
-            if (!window.db || !window.auth) {
-                // Config is missing and error is already rendered by the check above
-                return;
-            }
-
-            showLoading(true);
-
-            // 1. Sign in
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(window.auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(window.auth);
-                }
-            } catch (error) {
-                console.error("Authentication error:", error);
-                showStatus(`Authentication failed: ${error.message}`);
-                return;
-            }
-
-            // 2. Set up Auth State Listener
-            onAuthStateChanged(window.auth, (user) => {
-                if (user) {
-                    appState.userId = user.uid;
-                    appState.isAuthReady = true;
-
-                    // Load name from session storage or prompt for name
-                    const storedName = sessionStorage.getItem('userName');
-                    if (storedName) {
-                        appState.userName = storedName;
-                        handleEnterLobby(appState.userId, storedName);
+                const userRef = ref(db, `users/${userId}`);
+                get(userRef).then((snapshot) => {
+                    if (snapshot.exists() && snapshot.val().name) {
+                        userName = snapshot.val().name;
+                        // Make sure user is marked as online if they refresh the page
+                        set(ref(db, `users/${userId}/online`), true);
+                        onDisconnect(ref(db, `users/${userId}`)).update({ online: false, status: 'offline' });
+                        setupLobby();
                     } else {
-                        renderLogin();
+                        showScreen('login');
                     }
-                } else {
-                    // User signed out or failed to sign in
-                    appState.userId = null;
-                    appState.userName = null;
-                    appState.isAuthReady = true;
-                    cleanupListeners();
-                    renderLogin();
-                }
-                showLoading(false);
-            });
-        }
-
-        async function handleEnterLobby(userId, userName) {
-            appState.userName = userName;
-            sessionStorage.setItem('userName', userName);
-
-            // Set user online status
-            const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, userId);
-            await setDoc(userRef, {
-                id: userId,
-                name: userName,
-                status: 'online', // 'online', 'in-game', 'offline'
-                lastActive: serverTimestamp(),
-                pendingInvite: null, // { from: otherUserId, gameId: newGameId }
-            }, { merge: true });
-
-            // Set presence listener (simple cleanup on window close/reload)
-            window.addEventListener('beforeunload', async () => {
-                 await updateDoc(userRef, { status: 'offline' });
-            });
-
-            // Start listening for other online users and invites
-            startOnlineUsersListener();
-
-            // Check for existing games or invites
-            const inviteQuery = query(collection(window.db, PUBLIC_COLLECTION_GAMES), where('playersId', 'array-contains', userId));
-            const inviteSnapshot = await getDocs(inviteQuery);
-
-            if (!inviteSnapshot.empty) {
-                const pendingGame = inviteSnapshot.docs.find(d => d.data().status === 'pending');
-                const activeGame = inviteSnapshot.docs.find(d => d.data().status !== 'pending' && d.data().status !== 'finished');
-
-                if (activeGame) {
-                    // Rejoin active game
-                    appState.currentGameId = activeGame.id;
-                    startCurrentGameListener(activeGame.id);
-                    return;
-                } else if (pendingGame) {
-                    // Handle pending invite
-                    const inviterId = pendingGame.data().playersId.find(id => id !== userId);
-                    const inviter = appState.onlineUsers[inviterId]?.name || 'ผู้เล่นคนอื่น';
-                    
-                    showModal(
-                        'คำเชิญเข้าร่วมเกม',
-                        `คุณได้รับคำเชิญเข้าร่วมเกมจาก ${inviter}`,
-                        () => handleAcceptInvite(pendingGame.id, inviterId),
-                        () => handleDeleteGame(pendingGame.id),
-                        'เข้าร่วม',
-                        'ปฏิเสธ'
-                    );
-                }
+                });
+            } else {
+                signInAnonymously(auth).catch((error) => console.error("Anonymous sign in failed", error));
             }
-            
-            renderLobby();
+        });
+
+        // --- UI Control ---
+        function showScreen(screenName) {
+            loginScreen.classList.add('hidden');
+            lobbyScreen.classList.add('hidden');
+            gameScreen.classList.add('hidden');
+            document.getElementById(`${screenName}-screen`).classList.remove('hidden');
         }
 
-        function handleJoinLobby() {
-            const name = $("#name-input").value.trim();
-            if (name.length < 2 || name.length > 15) {
-                showStatus("กรุณาใส่ชื่อระหว่าง 2 ถึง 15 ตัวอักษร");
+        // --- Login Logic ---
+        loginButton.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            if (name) {
+                userName = name;
+                const userRef = ref(db, `users/${userId}`);
+                set(userRef, {
+                    name: userName,
+                    online: true,
+                    status: 'idle'
+                });
+                onDisconnect(userRef).update({ online: false, status: 'offline' });
+                setupLobby();
+            } else {
+                loginError.classList.remove('hidden');
+            }
+        });
+        
+        // --- Lobby Logic ---
+        function setupLobby() {
+            userNameDisplay.textContent = userName;
+            showScreen('lobby');
+            listenForPlayers();
+            listenForInvitations();
+            listenForGameStart();
+        }
+
+        function listenForPlayers() {
+            const usersRef = ref(db, 'users');
+            onValue(usersRef, (snapshot) => {
+                playerList.innerHTML = '';
+                const users = snapshot.val();
+                let onlineCount = 0;
+                if (users) {
+                    Object.keys(users).forEach(uid => {
+                        if (users[uid].online && uid !== userId) {
+                            onlineCount++;
+                            const user = users[uid];
+                            const li = document.createElement('li');
+                            li.className = 'flex justify-between items-center bg-gray-50 p-2 rounded-lg';
+                            
+                            const nameSpan = document.createElement('span');
+                            nameSpan.textContent = `${user.name} (${user.status === 'in-game' ? 'กำลังเล่น' : 'ว่าง'})`;
+                            li.appendChild(nameSpan);
+
+                            if(user.status === 'idle') {
+                                const inviteButton = document.createElement('button');
+                                inviteButton.textContent = 'เชิญ';
+                                inviteButton.className = 'bg-blue-500 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-600';
+                                inviteButton.onclick = () => sendInvitation(uid, user.name);
+                                li.appendChild(inviteButton);
+                            }
+                            playerList.appendChild(li);
+                        }
+                    });
+                }
+                if (onlineCount === 0) {
+                    playerList.innerHTML = '<li class="text-center text-gray-400">ไม่มีผู้เล่นอื่นออนไลน์</li>';
+                }
+            });
+        }
+        
+        function sendInvitation(targetId, targetName) {
+            const invitationRef = ref(db, `invitations/${targetId}/${userId}`);
+            set(invitationRef, {
+                senderName: userName,
+                senderId: userId
+            });
+            alert(`ส่งคำเชิญไปที่ ${targetName} แล้ว`);
+        }
+
+        function listenForInvitations() {
+             const invitationsRef = ref(db, `invitations/${userId}`);
+             onValue(invitationsRef, (snapshot) => {
+                invitationsList.innerHTML = '';
+                const invitations = snapshot.val();
+                if(invitations) {
+                    Object.keys(invitations).forEach(senderId => {
+                        const inv = invitations[senderId];
+                        const div = document.createElement('div');
+                        div.className = 'flex justify-between items-center bg-green-50 p-2 rounded-lg';
+                        div.innerHTML = `<span>${inv.senderName} ชวนคุณเล่นเกม</span>`;
+                        
+                        const acceptButton = document.createElement('button');
+                        acceptButton.textContent = 'ยอมรับ';
+                        acceptButton.className = 'bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600';
+                        acceptButton.onclick = () => acceptInvitation(senderId);
+                        div.appendChild(acceptButton);
+                        invitationsList.appendChild(div);
+                    });
+                } else {
+                    invitationsList.innerHTML = '<p class="text-gray-400">ยังไม่มีคำเชิญ...</p>';
+                }
+             });
+        }
+        
+        async function acceptInvitation(senderId) {
+            const gameId = push(ref(db, 'games')).key;
+            const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
+
+            // Get sender's name before creating the game
+            const senderNameSnapshot = await get(ref(db, `users/${senderId}/name`));
+            if (!senderNameSnapshot.exists()) {
+                console.error("Could not find sender's name.");
+                alert("เกิดข้อผิดพลาด: ไม่พบชื่อผู้ส่งคำเชิญ");
                 return;
             }
-            showLoading(true);
-            handleEnterLobby(appState.userId, name);
+            const senderName = senderNameSnapshot.val();
+            
+            const gameData = {
+                player1: { id: senderId, name: senderName, choice: null },
+                player2: { id: userId, name: userName, choice: null },
+                currentQuestionIndex: 0,
+                questions: shuffledQuestions,
+                status: 'playing'
+            };
+            
+            await set(ref(db, `games/${gameId}`), gameData);
+           
+            // Update player statuses
+            await set(ref(db, `users/${userId}/status`), 'in-game');
+            await set(ref(db, `users/${userId}/currentGameId`), gameId);
+            await set(ref(db, `users/${senderId}/status`), 'in-game');
+            await set(ref(db, `users/${senderId}/currentGameId`), gameId);
+
+            // Clean up all my invitations
+            await remove(ref(db, `invitations/${userId}`));
         }
 
-        async function handleSignOut() {
-            if (appState.userId && window.db) {
-                // Set user status to offline before logging out
-                const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
-                try {
-                    await updateDoc(userRef, { status: 'offline' });
-                } catch (e) {
-                    console.error("Failed to set status to offline:", e);
+        function listenForGameStart() {
+            const userGameIdRef = ref(db, `users/${userId}/currentGameId`);
+            onValue(userGameIdRef, (snapshot) => {
+                const gameId = snapshot.val();
+                if (gameId && !currentGameId) { // Start game only if not already in one
+                    startGame(gameId);
                 }
-                sessionStorage.removeItem('userName');
-            }
-            cleanupListeners();
-            if(window.auth) await signOut(window.auth);
-            // onAuthStateChanged will handle renderLogin
-        }
-
-        // --- FIRESTORE LISTENERS ---
-
-        function cleanupListeners() {
-            if (appState.unsubscribeOnlineUsers) {
-                appState.unsubscribeOnlineUsers();
-                appState.unsubscribeOnlineUsers = null;
-            }
-            if (appState.unsubscribeCurrentGame) {
-                appState.unsubscribeCurrentGame();
-                appState.unsubscribeCurrentGame = null;
-            }
-            appState.currentGameId = null;
-            appState.currentGame = null;
-        }
-
-        function startOnlineUsersListener() {
-            if (appState.unsubscribeOnlineUsers) appState.unsubscribeOnlineUsers();
-            if (!window.db) return;
-
-            const usersCollection = collection(window.db, PUBLIC_COLLECTION_USERS);
-            const q = query(usersCollection, where('status', 'in', ['online', 'in-game']));
-
-            appState.unsubscribeOnlineUsers = onSnapshot(q, (snapshot) => {
-                let users = {};
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    users[data.id] = data;
-                });
-                appState.onlineUsers = users;
-
-                // Check for pending invite in my own user doc (simpler direct listening)
-                const myUserDoc = users[appState.userId];
-                if (myUserDoc && myUserDoc.pendingInvite && appState.currentGameId === null) {
-                    // Received an invite, show modal
-                    const inviter = appState.onlineUsers[myUserDoc.pendingInvite.from]?.name || 'ผู้เล่นคนอื่น';
-                    const gameId = myUserDoc.pendingInvite.gameId;
-                    const inviterId = myUserDoc.pendingInvite.from;
-
-                    showModal(
-                        'คำเชิญเข้าร่วมเกม',
-                        `คุณได้รับคำเชิญเข้าร่วมเกมจาก ${inviter}`,
-                        () => handleAcceptInvite(gameId, inviterId),
-                        () => handleRejectInvite(inviterId),
-                        'เข้าร่วม',
-                        'ปฏิเสธ'
-                    );
-                    // Clear the pending invite immediately to prevent re-triggering
-                    updateDoc(doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId), { pendingInvite: null });
-                }
-
-                if (appState.currentGameId === null) {
-                    renderLobby();
-                }
-            }, (error) => {
-                console.error("Error listening to online users:", error);
-                showStatus("เกิดข้อผิดพลาดในการโหลดรายชื่อผู้เล่นออนไลน์");
             });
         }
 
-        function startCurrentGameListener(gameId) {
-            if (appState.unsubscribeCurrentGame) appState.unsubscribeCurrentGame();
-            if (!window.db) return;
+        // --- Game Logic ---
+        function startGame(gameId) {
+            currentGameId = gameId;
+            showScreen('game');
 
-            appState.currentGameId = gameId;
-            const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
-
-            appState.unsubscribeCurrentGame = onSnapshot(gameRef, (docSnap) => {
-                if (!docSnap.exists() || docSnap.data().status === 'finished') {
-                    // Game ended or deleted
-                    cleanupListeners();
-                    if(window.db && appState.userId) {
-                        const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
-                        updateDoc(userRef, { status: 'online' });
-                    }
-                    renderLobby();
+            const gameRef = ref(db, `games/${currentGameId}`);
+            if (gameListener) gameListener(); // Unsubscribe from old listener if any
+            gameListener = onValue(gameRef, (snapshot) => {
+                if (!snapshot.exists()) {
+                    alert('เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว');
+                    cleanUpAfterGame();
                     return;
                 }
-
-                const game = docSnap.data();
-                appState.currentGame = game;
-
-                if (game.status === 'finished') {
-                    renderEndGame();
-                    return;
-                }
-
-                const myPlayer = game.players[appState.userId];
-                const opponentPlayer = Object.values(game.players).find(p => p.id !== appState.userId);
-
-                if (game.status === 'waiting_for_choices' && myPlayer.choice && opponentPlayer.choice) {
-                    // Both players have chosen, trigger the reveal/score transaction
-                    handleRevealChoices(gameId);
-                }
-
-                renderGame();
-            }, (error) => {
-                console.error("Error listening to current game:", error);
-                showStatus("เกิดข้อผิดพลาดในการโหลดข้อมูลเกม");
+                const gameState = snapshot.val();
+                renderGameState(gameState);
             });
         }
 
-        // --- GAME LOGIC FUNCTIONS ---
-
-        async function handleSendInvite(targetUserId) {
-            showLoading(true);
-            try {
-                // 1. Create the new game document (status: 'pending')
-                const gameRef = doc(collection(window.db, PUBLIC_COLLECTION_GAMES));
-                const newGameId = gameRef.id;
-
-                const gameData = {
-                    id: newGameId,
-                    status: 'pending',
-                    playersId: [appState.userId, targetUserId],
-                    questions: GAME_QUESTIONS.map((q, index) => ({
-                        ...q,
-                        index: index,
-                        choiceA: q.optionA, // redundant but clearer for DB
-                        choiceB: q.optionB
-                    })),
-                    currentQuestionIndex: 0,
-                    players: {
-                        [appState.userId]: { id: appState.userId, name: appState.userName, choice: null, score: 0 },
-                        [targetUserId]: { id: targetUserId, name: appState.onlineUsers[targetUserId].name, choice: null, score: 0 },
-                    },
-                    createdAt: serverTimestamp(),
-                };
-                await setDoc(gameRef, gameData);
-
-                // 2. Set pending invite on the target user's document
-                const targetRef = doc(window.db, PUBLIC_COLLECTION_USERS, targetUserId);
-                await updateDoc(targetRef, {
-                    pendingInvite: {
-                        from: appState.userId,
-                        gameId: newGameId
-                    }
-                });
-
-                showStatus(`ส่งคำเชิญไปให้ ${appState.onlineUsers[targetUserId].name} แล้ว! รอกำลังตอบรับ...`);
-
-            } catch (error) {
-                console.error("Error sending invite:", error);
-                showStatus("ส่งคำเชิญไม่สำเร็จ");
-            } finally {
-                showLoading(false);
+        function renderGameState(state) {
+            // Check if state or players are null before rendering
+            if (!state || !state.player1 || !state.player2) {
+                console.log("Waiting for game state to be fully populated...");
+                return;
             }
-        }
 
-        async function handleAcceptInvite(gameId, inviterId) {
-            showLoading(true);
-            try {
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
-                const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
-                const inviterUserRef = doc(window.db, PUBLIC_COLLECTION_USERS, inviterId);
+            const isPlayer1 = state.player1.id === userId;
+            const me = isPlayer1 ? state.player1 : state.player2;
+            const opponent = isPlayer1 ? state.player2 : state.player1;
+            
+            player1Name.textContent = state.player1.name;
+            player2Name.textContent = state.player2.name;
 
-                // 1. Update game status to active
-                await updateDoc(gameRef, { status: 'waiting_for_choices' });
-
-                // 2. Update both players' status to in-game
-                await updateDoc(userRef, { status: 'in-game', pendingInvite: null });
-                await updateDoc(inviterUserRef, { status: 'in-game' });
-
-                // 3. Start listening to the game
-                startCurrentGameListener(gameId);
-
-            } catch (error) {
-                console.error("Error accepting invite:", error);
-                showStatus("เข้าร่วมเกมไม่สำเร็จ");
-            } finally {
-                showLoading(false);
+            if (state.status === 'finished') {
+                questionText.textContent = "เกมจบแล้ว!";
+                optionAButton.classList.add('hidden');
+                optionBButton.classList.add('hidden');
+                gameStatus.innerHTML = '<p class="font-bold text-green-600">ขอบคุณที่เล่น!</p>';
+                nextQuestionButton.classList.add('hidden');
+                endGameButton.classList.remove('hidden');
+                return;
             }
-        }
 
-        async function handleRejectInvite(inviterId) {
-            try {
-                // Remove pending invite from self
-                await updateDoc(doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId), { pendingInvite: null });
-                showStatus("ปฏิเสธคำเชิญแล้ว");
-            } catch (e) {
-                console.error("Error rejecting invite:", e);
-            }
-            renderLobby();
-        }
+            const question = state.questions[state.currentQuestionIndex];
+            questionCounter.textContent = `คำถามที่ ${state.currentQuestionIndex + 1}/${state.questions.length}`;
+            questionText.textContent = `${question.a} หรือ ${question.b}`;
+            optionAButton.textContent = question.a;
+            optionBButton.textContent = question.b;
 
-        async function handleMakeChoice(event) {
-            const choice = event.currentTarget.dataset.choice;
-            if (!appState.currentGameId || !window.db) return;
+            optionAButton.onclick = () => makeChoice('a');
+            optionBButton.onclick = () => makeChoice('b');
 
-            // Disable buttons immediately for feedback
-            $$('.choice-btn').forEach(btn => {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'cursor-not-allowed');
-            });
+            const bothChosen = me.choice && opponent.choice;
+            
+            if (bothChosen) {
+                gameStatus.classList.add('hidden');
+                resultDisplay.classList.remove('hidden');
+                
+                player1Choice.textContent = `${state.player1.name} เลือก: ${state.questions[state.currentQuestionIndex][state.player1.choice]}`;
+                player2Choice.textContent = `${state.player2.name} เลือก: ${state.questions[state.currentQuestionIndex][state.player2.choice]}`;
 
-            try {
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, appState.currentGameId);
-                const playerPath = `players.${appState.userId}.choice`;
+                optionAButton.classList.add('btn-disabled');
+                optionBButton.classList.add('btn-disabled');
+                optionAButton.onclick = null;
+                optionBButton.onclick = null;
+                nextQuestionButton.classList.remove('hidden');
 
-                await updateDoc(gameRef, { [playerPath]: choice });
+            } else if (me.choice) {
+                gameStatus.innerHTML = '<p class="text-yellow-500 font-bold">รอผู้เล่นอีกคนเลือก...</p>';
+                optionAButton.classList.add('btn-disabled');
+                optionBButton.classList.add('btn-disabled');
+                optionAButton.onclick = null;
+                optionBButton.onclick = null;
 
-            } catch (error) {
-                console.error("Error making choice:", error);
-                showStatus("เลือกไม่สำเร็จ");
-            }
-        }
-
-        async function handleRevealChoices(gameId) {
-            showLoading(true);
-
-            // Use transaction to ensure atomic update of score and status
-            const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
-
-            try {
-                await runTransaction(window.db, async (transaction) => {
-                    const gameDoc = await transaction.get(gameRef);
-                    const game = gameDoc.data();
-
-                    if (game.status !== 'waiting_for_choices') {
-                        // Already handled by another player or already revealed
-                        return;
-                    }
-
-                    const players = game.players;
-                    const playerA = Object.values(players)[0];
-                    const playerB = Object.values(players)[1];
-
-                    let scoreA = playerA.score;
-                    let scoreB = playerB.score;
-
-                    // Scoring logic: +1 if they chose the same thing
-                    if (playerA.choice === playerB.choice) {
-                        scoreA += 1;
-                        scoreB += 1;
-                    }
-
-                    // Prepare update
-                    const updatedPlayers = {
-                        [playerA.id]: { ...playerA, score: scoreA },
-                        [playerB.id]: { ...playerB, score: scoreB },
-                    };
-
-                    transaction.update(gameRef, {
-                        players: updatedPlayers,
-                        status: 'revealed'
-                    });
-                });
-            } catch (error) {
-                console.error("Transaction failed (reveal choices):", error);
-                showStatus("เกิดข้อผิดพลาดในการเปิดเผยผล");
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        async function handleNextQuestion() {
-            const { currentGameId, currentGame, userId } = appState;
-            if (!currentGameId || currentGame.status !== 'revealed' || !window.db) return;
-
-            const nextIndex = currentGame.currentQuestionIndex + 1;
-
-            if (nextIndex < GAME_QUESTIONS.length) {
-                // Go to next question and reset choices
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, currentGameId);
-                const players = currentGame.players;
-                const playerAId = Object.keys(players)[0];
-                const playerBId = Object.keys(players)[1];
-
-                try {
-                    await updateDoc(gameRef, {
-                        currentQuestionIndex: nextIndex,
-                        status: 'waiting_for_choices',
-                        [`players.${playerAId}.choice`]: null,
-                        [`players.${playerBId}.choice`]: null,
-                    });
-                } catch (e) {
-                    console.error("Error going to next question:", e);
-                    showStatus("ไม่สามารถไปคำถามต่อไปได้");
-                }
             } else {
-                // Game Over
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, currentGameId);
-                await updateDoc(gameRef, { status: 'finished' });
-                // Listener handles renderEndGame
+                gameStatus.innerHTML = '<p class="text-gray-500">กรุณาเลือกคำตอบของคุณ</p>';
+                resultDisplay.classList.add('hidden');
+                optionAButton.classList.remove('btn-disabled');
+                optionBButton.classList.remove('btn-disabled');
+                nextQuestionButton.classList.add('hidden');
             }
         }
 
-        async function handleReturnToLobby(gameId) {
-            if (!window.db || !appState.userId) return;
+        function makeChoice(choice) {
+            const playerKey = (auth.currentUser.uid === player1Name.dataset.id) ? 'player1' : 'player2';
+            get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+                const state = snapshot.val();
+                const playerKeyToUpdate = state.player1.id === userId ? 'player1' : 'player2';
+                set(ref(db, `games/${currentGameId}/${playerKeyToUpdate}/choice`), choice);
+            });
+        }
+        
+        nextQuestionButton.addEventListener('click', () => {
+             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+                const state = snapshot.val();
+                if (!state) return;
+                const nextIndex = state.currentQuestionIndex + 1;
+                
+                if (nextIndex < state.questions.length) {
+                    set(ref(db, `games/${currentGameId}/currentQuestionIndex`), nextIndex);
+                    set(ref(db, `games/${currentGameId}/player1/choice`), null);
+                    set(ref(db, `games/${currentGameId}/player2/choice`), null);
+                } else {
+                    set(ref(db, `games/${currentGameId}/status`), 'finished');
+                }
+             });
+        });
 
-            // Delete the game and reset user status
-            try {
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
-                await deleteDoc(gameRef); // This will trigger the listener to clean up
-                showStatus("กลับสู่ล็อบบี้แล้ว");
-            } catch (e) {
-                console.error("Error ending game:", e);
-                showStatus("ไม่สามารถจบเกมได้อย่างสมบูรณ์ แต่กลับสู่ล็อบบี้แล้ว");
+        endGameButton.addEventListener('click', () => {
+             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+                if(snapshot.exists()) {
+                    const state = snapshot.val();
+                    // Set both players back to idle
+                    set(ref(db, `users/${state.player1.id}`), { ...state.player1, online: true, status: 'idle', currentGameId: null });
+                    set(ref(db, `users/${state.player2.id}`), { ...state.player2, online: true, status: 'idle', currentGameId: null });
+                    remove(ref(db, `games/${currentGameId}`));
+                } else {
+                    cleanUpAfterGame();
+                }
+             });
+        });
+
+        function cleanUpAfterGame() {
+            set(ref(db, `users/${userId}/status`), 'idle');
+            remove(ref(db, `users/${userId}/currentGameId`);
+
+            currentGameId = null;
+            if (gameListener) {
+                gameListener(); 
+                gameListener = null;
             }
-            cleanupListeners();
-            const userRef = doc(window.db, PUBLIC_COLLECTION_USERS, appState.userId);
-            await updateDoc(userRef, { status: 'online' });
-            renderLobby();
+            
+            optionAButton.classList.remove('hidden', 'btn-disabled');
+            optionBButton.classList.remove('hidden', 'btn-disabled');
+            endGameButton.classList.add('hidden');
+            nextQuestionButton.classList.add('hidden');
+            resultDisplay.classList.add('hidden');
+            gameStatus.classList.remove('hidden');
+
+            setupLobby();
         }
 
-        async function handleDeleteGame(gameId) {
-            if (!window.db) return;
-            // Used for rejecting an invite (deletes the pending game)
-            try {
-                const gameRef = doc(window.db, PUBLIC_COLLECTION_GAMES, gameId);
-                await deleteDoc(gameRef);
-                showStatus("ปฏิเสธคำเชิญแล้ว");
-            } catch (e) {
-                console.error("Error deleting game:", e);
-                showStatus("เกิดข้อผิดพลาดในการปฏิเสธคำเชิญ");
-            }
-            renderLobby();
-        }
-
-        // --- START APPLICATION ---
-        window.onload = initAuthAndFirestore;
     </script>
 </body>
 </html>
+
