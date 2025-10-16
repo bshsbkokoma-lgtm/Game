@@ -11,7 +11,7 @@
             font-family: 'Kanit', sans-serif;
         }
         .btn {
-            @apply w-full px-4 py-3 text-lg font-bold text-white rounded-lg shadow-md transition-all duration-200 ease-in-out;
+            @apply w-full px-4 py-3 text-lg font-bold text-white rounded-lg shadow-md transition-transform duration-200 ease-in-out;
         }
         .btn-primary {
             @apply bg-blue-500 hover:bg-blue-600 active:scale-95;
@@ -39,8 +39,7 @@
             <h1 class="text-3xl font-bold text-gray-800 mb-2">เกมเลือกฝั่ง</h1>
             <p class="text-gray-500 mb-6">ใส่ชื่อของคุณเพื่อเริ่มเล่นกับเพื่อนๆ</p>
             <input type="text" id="name-input" class="w-full px-4 py-2 border rounded-lg mb-4" placeholder="ชื่อของคุณ...">
-            <!-- CHANGED: Button is disabled by default -->
-            <button id="login-button" class="btn btn-primary btn-disabled" disabled>กำลังเชื่อมต่อ...</button>
+            <button id="login-button" class="btn btn-primary">เข้าสู่ระบบ</button>
             <p id="login-error" class="text-red-500 mt-2 hidden">กรุณาใส่ชื่อของคุณ</p>
         </div>
 
@@ -108,7 +107,17 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
         // --- Firebase Config ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", databaseURL: "YOUR_DATABASE_URL", projectId: "YOUR_PROJECT_ID", storageBucket: "YOUR_STORAGE_BUCKET", messagingSenderId: "YOUR_MESSAGING_SENDER_ID", appId: "YOUR_APP_ID" };
+        // This configuration has been updated with your provided details.
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
+            authDomain: "game-8ede6.firebaseapp.com",
+            databaseURL: "https://game-8ede6-default-rtdb.firebaseio.com", // Added this based on your projectId
+            projectId: "game-8ede6",
+            storageBucket: "game-8ede6.appspot.com", // Corrected the storage bucket URL
+            messagingSenderId: "206374174939",
+            appId: "1:206374174939:web:48556411426f53859a4cfe",
+            measurementId: "G-KG84KJ11VC"
+        };
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
@@ -144,7 +153,7 @@
         let userId;
         let userName;
         let currentGameId = null;
-        let playerListeners = {};
+        let playerListeners = {}; // To manage listeners and avoid duplicates
         let gameListener = null;
         let invitationsListener = null;
 
@@ -167,18 +176,11 @@
                 userId = user.uid;
                 userIdDisplay.textContent = userId;
 
-                // --- CHANGE: Enable the login button now that we have a user ID ---
-                loginButton.disabled = false;
-                loginButton.textContent = 'เข้าสู่ระบบ';
-                loginButton.classList.remove('btn-disabled');
-
+                // Check if user already has a name
                 const userRef = ref(db, `users/${userId}`);
                 get(userRef).then((snapshot) => {
                     if (snapshot.exists() && snapshot.val().name) {
                         userName = snapshot.val().name;
-                        // Make sure user is marked as online if they refresh the page
-                        set(ref(db, `users/${userId}/online`), true);
-                        onDisconnect(ref(db, `users/${userId}`)).update({ online: false, status: 'offline' });
                         setupLobby();
                     } else {
                         showScreen('login');
@@ -293,45 +295,42 @@
              });
         }
         
-        async function acceptInvitation(senderId) {
+        function acceptInvitation(senderId) {
             const gameId = push(ref(db, 'games')).key;
             const shuffledQuestions = [...questions].sort(() => 0.5 - Math.random());
 
-            // Get sender's name before creating the game
-            const senderNameSnapshot = await get(ref(db, `users/${senderId}/name`));
-            if (!senderNameSnapshot.exists()) {
-                console.error("Could not find sender's name.");
-                alert("เกิดข้อผิดพลาด: ไม่พบชื่อผู้ส่งคำเชิญ");
-                return;
-            }
-            const senderName = senderNameSnapshot.val();
-            
             const gameData = {
-                player1: { id: senderId, name: senderName, choice: null },
+                player1: { id: senderId, name: 'Loading...', choice: null },
                 player2: { id: userId, name: userName, choice: null },
                 currentQuestionIndex: 0,
                 questions: shuffledQuestions,
                 status: 'playing'
             };
             
-            await set(ref(db, `games/${gameId}`), gameData);
-           
-            // Update player statuses
-            await set(ref(db, `users/${userId}/status`), 'in-game');
-            await set(ref(db, `users/${userId}/currentGameId`), gameId);
-            await set(ref(db, `users/${senderId}/status`), 'in-game');
-            await set(ref(db, `users/${senderId}/currentGameId`), gameId);
+            // Get sender's name
+            get(ref(db, `users/${senderId}/name`)).then(snapshot => {
+                if(snapshot.exists()) {
+                     gameData.player1.name = snapshot.val();
+                     set(ref(db, `games/${gameId}`), gameData);
+                }
+            });
 
-            // Clean up all my invitations
-            await remove(ref(db, `invitations/${userId}`));
+            // Update player statuses
+            set(ref(db, `users/${userId}/status`), 'in-game');
+            set(ref(db, `users/${userId}/currentGameId`), gameId);
+            set(ref(db, `users/${senderId}/status`), 'in-game');
+            set(ref(db, `users/${senderId}/currentGameId`), gameId);
+
+            // Clean up invitation
+            remove(ref(db, `invitations/${userId}/${senderId}`));
         }
 
         function listenForGameStart() {
-            const userGameIdRef = ref(db, `users/${userId}/currentGameId`);
-            onValue(userGameIdRef, (snapshot) => {
-                const gameId = snapshot.val();
-                if (gameId && !currentGameId) { // Start game only if not already in one
-                    startGame(gameId);
+            const userStatusRef = ref(db, `users/${userId}`);
+            onValue(userStatusRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data && data.status === 'in-game' && data.currentGameId && !currentGameId) {
+                    startGame(data.currentGameId);
                 }
             });
         }
@@ -342,7 +341,6 @@
             showScreen('game');
 
             const gameRef = ref(db, `games/${currentGameId}`);
-            if (gameListener) gameListener(); // Unsubscribe from old listener if any
             gameListener = onValue(gameRef, (snapshot) => {
                 if (!snapshot.exists()) {
                     alert('เกมสิ้นสุดลงแล้ว หรือผู้เล่นอีกฝ่ายออกไปแล้ว');
@@ -355,12 +353,6 @@
         }
 
         function renderGameState(state) {
-            // Check if state or players are null before rendering
-            if (!state || !state.player1 || !state.player2) {
-                console.log("Waiting for game state to be fully populated...");
-                return;
-            }
-
             const isPlayer1 = state.player1.id === userId;
             const me = isPlayer1 ? state.player1 : state.player2;
             const opponent = isPlayer1 ? state.player2 : state.player1;
@@ -387,6 +379,7 @@
             optionAButton.onclick = () => makeChoice('a');
             optionBButton.onclick = () => makeChoice('b');
 
+            // Handle choices and status display
             const bothChosen = me.choice && opponent.choice;
             
             if (bothChosen) {
@@ -406,7 +399,7 @@
                 gameStatus.innerHTML = '<p class="text-yellow-500 font-bold">รอผู้เล่นอีกคนเลือก...</p>';
                 optionAButton.classList.add('btn-disabled');
                 optionBButton.classList.add('btn-disabled');
-                optionAButton.onclick = null;
+                 optionAButton.onclick = null;
                 optionBButton.onclick = null;
 
             } else {
@@ -419,18 +412,18 @@
         }
 
         function makeChoice(choice) {
-            const playerKey = (auth.currentUser.uid === player1Name.dataset.id) ? 'player1' : 'player2';
-            get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+            const gameRef = ref(db, `games/${currentGameId}`);
+            get(gameRef).then(snapshot => {
                 const state = snapshot.val();
-                const playerKeyToUpdate = state.player1.id === userId ? 'player1' : 'player2';
-                set(ref(db, `games/${currentGameId}/${playerKeyToUpdate}/choice`), choice);
+                const playerKey = state.player1.id === userId ? 'player1' : 'player2';
+                set(ref(db, `games/${currentGameId}/${playerKey}/choice`), choice);
             });
         }
         
         nextQuestionButton.addEventListener('click', () => {
-             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+             const gameRef = ref(db, `games/${currentGameId}`);
+             get(gameRef).then(snapshot => {
                 const state = snapshot.val();
-                if (!state) return;
                 const nextIndex = state.currentQuestionIndex + 1;
                 
                 if (nextIndex < state.questions.length) {
@@ -438,37 +431,42 @@
                     set(ref(db, `games/${currentGameId}/player1/choice`), null);
                     set(ref(db, `games/${currentGameId}/player2/choice`), null);
                 } else {
+                    // End of game
                     set(ref(db, `games/${currentGameId}/status`), 'finished');
                 }
              });
         });
 
         endGameButton.addEventListener('click', () => {
-             get(ref(db, `games/${currentGameId}`)).then(snapshot => {
+             // Only one player needs to remove the game object
+             const gameRef = ref(db, `games/${currentGameId}`);
+             get(gameRef).then(snapshot => {
                 if(snapshot.exists()) {
                     const state = snapshot.val();
-                    // Set both players back to idle
-                    set(ref(db, `users/${state.player1.id}`), { ...state.player1, online: true, status: 'idle', currentGameId: null });
-                    set(ref(db, `users/${state.player2.id}`), { ...state.player2, online: true, status: 'idle', currentGameId: null });
-                    remove(ref(db, `games/${currentGameId}`));
-                } else {
-                    cleanUpAfterGame();
+                    remove(ref(db, `users/${state.player1.id}/status`));
+                    remove(ref(db, `users/${state.player1.id}/currentGameId`));
+                    remove(ref(db, `users/${state.player2.id}/status`));
+                    remove(ref(db, `users/${state.player2.id}/currentGameId`));
+                    remove(gameRef); // This will trigger the cleanup for the other player
                 }
              });
+             cleanUpAfterGame();
         });
 
         function cleanUpAfterGame() {
             set(ref(db, `users/${userId}/status`), 'idle');
-            remove(ref(db, `users/${userId}/currentGameId`);
+            remove(ref(db, `users/${userId}/currentGameId`));
 
+            // Reset game state
             currentGameId = null;
             if (gameListener) {
-                gameListener(); 
+                gameListener(); // Unsubscribe
                 gameListener = null;
             }
             
-            optionAButton.classList.remove('hidden', 'btn-disabled');
-            optionBButton.classList.remove('hidden', 'btn-disabled');
+            // Reset UI
+            optionAButton.classList.remove('hidden');
+            optionBButton.classList.remove('hidden');
             endGameButton.classList.add('hidden');
             nextQuestionButton.classList.add('hidden');
             resultDisplay.classList.add('hidden');
@@ -480,4 +478,6 @@
     </script>
 </body>
 </html>
+
+
 
