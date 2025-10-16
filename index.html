@@ -131,24 +131,12 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // เปลี่ยนจาก setDoc เป็นใช้ addDoc (เพิ่มการ import)
         import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // --- ส่วนที่ 1: การตั้งค่า Firebase (นำค่าที่คุณให้มาใส่เรียบร้อยแล้ว) ---
-        // เพิ่ม "storageBucket" เพื่อให้ Config สมบูรณ์ที่สุดตามโครงสร้างของ Canvas
-        const USER_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyA4VP_-06lqomseyhewH6Iv6eOMPwG8nnU",
-            authDomain: "game-8ede6.firebaseapp.com",
-            projectId: "game-8ede6",
-            storageBucket: "game-8ede6.appspot.com", // แก้เป็น .appspot.com ตามรูปแบบมาตรฐาน
-            messagingSenderId: "206374174939",
-            appId: "1:206374174939:web:48556411426f53859a4cfe",
-            // measurementId: "G-KG84KJ11VC"
-        };
-        
-        // ใช้ ID นี้สำหรับ Isolation Path ใน Firestore เพื่อไม่ให้ข้อมูลปนกับแอปอื่น
-        const APP_IDENTIFIER = 'multiplayer-this-or-that-public';
+        // --- ส่วนที่ 1: การตั้งค่า Firebase ที่ถูกต้องตามสภาพแวดล้อม ---
+        // ตรวจสอบตัวแปร Global ที่ระบบเตรียมไว้ (บังคับใช้เพื่อแก้ไข [invalid-argument])
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id-fallback';
 
         // --- Firebase Globals ---
         let db = null;
@@ -262,12 +250,12 @@
             }
         }
 
-        // --- Firestore Reference Functions ---
+        // --- Firestore Reference Functions (ใช้ appId ที่ดึงมาอย่างถูกต้อง) ---
 
         function getPublicDocRef(collectionName, docId) {
-            // พาธที่ใช้ในการสร้างเกม: artifacts/multiplayer-this-or-that-public/public/data/[collectionName]/[docId]
+            // พาธที่ใช้ในการสร้างเกม: artifacts/{appId}/public/data/[collectionName]/[docId]
             return doc(db, 
-                'artifacts', APP_IDENTIFIER, 
+                'artifacts', appId, 
                 'public', 'data', 
                 collectionName, 
                 docId
@@ -276,7 +264,7 @@
 
         function getPublicCollectionRef(collectionName) {
             return collection(db, 
-                'artifacts', APP_IDENTIFIER, 
+                'artifacts', appId, 
                 'public', 'data', 
                 collectionName
             );
@@ -309,7 +297,7 @@
                 totalQuestions = questionPairs.length;
                 
                 // 2. Create the game document
-                const gameCollectionRef = getPublicCollectionRef('games'); // ใช้ Collection Reference
+                const gameCollectionRef = getPublicCollectionRef('games'); 
                 
                 const gameData = {
                     status: 'WAITING_FOR_INVITE',
@@ -325,10 +313,9 @@
                     lastActionTime: serverTimestamp()
                 };
 
-                // ***** การเขียนข้อมูลที่อาจล้มเหลว: เปลี่ยนจาก setDoc(doc(...)) เป็น addDoc(collection(...)) *****
+                // ใช้ addDoc เพื่อให้ Firestore สร้าง Document ID ที่ถูกต้องตาม Collection Reference
                 const newGameDoc = await addDoc(gameCollectionRef, gameData);
                 currentGameId = newGameDoc.id;
-                // *********************************************************************************************
 
                 isHost = true;
                 
@@ -346,13 +333,8 @@
                 // ดึงโค้ด Error จาก Firebase (ถ้ามี)
                 if (error.code) {
                     errorMsg += `: [${error.code}]`;
-                    if (error.code === 'permission-denied') {
-                        errorMsg += " (ปัญหา: Security Rules ไม่อนุญาตให้เขียน)";
-                    } else if (error.code === 'unauthenticated') {
-                        errorMsg += " (ปัญหา: ผู้ใช้ไม่ได้ลงชื่อเข้าใช้)";
-                    } else if (error.code === 'invalid-argument') {
-                        // เพิ่มคำแนะนำสำหรับการ Debug
-                        errorMsg += " (ปัญหา: ข้อมูลผิดรูปแบบหรือ Config ไม่สมบูรณ์)";
+                    if (error.code === 'invalid-argument') {
+                        errorMsg += " (ปัญหาที่คาดว่าเกิด: Path reference ไม่ถูกต้อง)";
                     }
                 } else {
                     errorMsg += " (โปรดตรวจสอบ Console)";
@@ -764,8 +746,12 @@
                 return;
             }
             nickname = inputNickname;
-            setView('lobby');
+            
+            // ** WRITE OPERATION #1: Update presence **
+            // We call this first to ensure the basic public path access works.
             updatePlayerStatus('Online'); 
+
+            setView('lobby');
             startListeningToLobby(); 
             
             const q = query(
@@ -803,8 +789,17 @@
         // --- Firebase Initialization ---
 
         async function initFirebase() {
-            const firebaseConfig = USER_FIREBASE_CONFIG;
+            // ดึง Firebase Config จากตัวแปร Global
+            const firebaseConfig = typeof __firebase_config !== 'undefined' 
+                ? JSON.parse(__firebase_config) 
+                : null;
             
+            if (!firebaseConfig) {
+                 console.error("Firebase Config is missing. Cannot initialize.");
+                 showGlobalMessage('ข้อผิดพลาด: ไม่พบการตั้งค่า Firebase', 'error');
+                 return;
+            }
+
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -817,6 +812,7 @@
 
                 // ** LOG ที่สำคัญ **
                 console.log("Firebase Auth SUCCESS. User ID:", userId);
+                console.log("App ID used for paths:", appId);
                 userStatusDisplayEl.textContent = `สถานะ: พร้อม (UserID: ${userId.substring(0, 8)}...)`;
                 
                 // ลบสถานะออนไลน์เก่าออก 
@@ -841,5 +837,3 @@
 
 </body>
 </html>
-
-
